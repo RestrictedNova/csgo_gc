@@ -9,6 +9,7 @@ public:
 
     bool IsValid() const { return !m_error; }
     bool IsDone() const { return m_offset >= m_size; }
+    uint32_t BytesLeft() const { return m_size - m_offset; }
 
     // ReadData wrappers
     template<typename T>

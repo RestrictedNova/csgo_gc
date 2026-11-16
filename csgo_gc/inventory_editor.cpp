@@ -27,7 +27,14 @@ enum CmdType : uint32_t
     CmdProtocolInfo // uint32 ProtocolVersion
 };
 
-static void ParseItem(MessageRead &message, EditorItem &item, ItemSchema &itemSchema)
+// counts come from the editor, so check them against the data that's actually
+// there before reserving anything. each attribute and equip takes at least 8 bytes
+static bool CountFits(const MessageRead &message, uint32_t count)
+{
+    return message.IsValid() && count <= message.BytesLeft() / 8;
+}
+
+static bool ParseItem(MessageRead &message, EditorItem &item, ItemSchema &itemSchema)
 {
     item.lowId = message.ReadUint32();
 
@@ -41,6 +48,11 @@ static void ParseItem(MessageRead &message, EditorItem &item, ItemSchema &itemSc
     item.desc.rarity = ToEnum<Rarity>(message.ReadUint32());
 
     uint32_t attributeCount = message.ReadUint32();
+    if (!CountFits(message, attributeCount))
+    {
+        return false;
+    }
+
     item.desc.attributes.reserve(attributeCount);
 
     for (uint32_t i = 0; i < attributeCount; i++)
@@ -52,7 +64,7 @@ static void ParseItem(MessageRead &message, EditorItem &item, ItemSchema &itemSc
         if (!valueData)
         {
             // can't recover from this
-            return;
+            return false;
         }
 
         std::string value{ static_cast<const char *>(valueData), valueSize };
@@ -75,6 +87,11 @@ static void ParseItem(MessageRead &message, EditorItem &item, ItemSchema &itemSc
     }
 
     uint32_t equipCount = message.ReadUint32();
+    if (!CountFits(message, equipCount))
+    {
+        return false;
+    }
+
     item.desc.equips.reserve(equipCount);
 
     for (uint32_t i = 0; i < equipCount; i++)
@@ -83,6 +100,8 @@ static void ParseItem(MessageRead &message, EditorItem &item, ItemSchema &itemSc
         uint32_t slotId = message.ReadUint32();
         item.desc.equips.emplace_back(classId, slotId);
     }
+
+    return true;
 }
 
 static void SerializeItem(MessageWrite &message, const EditorItem &item)
@@ -237,6 +256,7 @@ bool InventoryEditor::ParseMessage(const Message &message, EditorChanges &change
     while (!read.IsDone())
     {
         std::optional<EditorItem> item;
+        bool parsed = true;
 
         uint32_t cmd = read.ReadUint32();
         switch (cmd)
@@ -244,13 +264,13 @@ bool InventoryEditor::ParseMessage(const Message &message, EditorChanges &change
         case CmdItemCreate:
             item.emplace();
             item->type = EditorItemChangeType::Created;
-            ParseItem(read, *item, m_itemSchema);
+            parsed = ParseItem(read, *item, m_itemSchema);
             break;
 
         case CmdItemModify:
             item.emplace();
             item->type = EditorItemChangeType::Modified;
-            ParseItem(read, *item, m_itemSchema);
+            parsed = ParseItem(read, *item, m_itemSchema);
             break;
 
         case CmdItemDestroy:
@@ -264,7 +284,7 @@ bool InventoryEditor::ParseMessage(const Message &message, EditorChanges &change
             return false;
         }
 
-        if (!read.IsValid())
+        if (!parsed || !read.IsValid())
         {
             Platform::Print("Parsing message type {} from item editor failed\n", cmd);
             return false;
