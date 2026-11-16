@@ -864,6 +864,8 @@ void ClientGC::RequestPrestigeCoin(GCMessageRead &messageRead)
         return;
     }
 
+    Platform::Print("Service medal request: def index {}, level {}\n", request.defindex(), m_level);
+
     if (m_level < MaxPlayerLevel)
     {
         Platform::Print("Ignoring service medal request at level {}, need {}\n", m_level, MaxPlayerLevel);
@@ -885,6 +887,7 @@ void ClientGC::RequestPrestigeCoin(GCMessageRead &messageRead)
         response.set_defindex(FromEnum(offerDefIndex));
         response.set_upgradeid(upgradeItemId);
         SendMessageToGame(false, k_EMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin, response);
+        Platform::Print("Offered service medal {} (upgrading item {})\n", FromEnum(offerDefIndex), upgradeItemId);
         return;
     }
 
