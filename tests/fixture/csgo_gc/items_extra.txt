@@ -38,7 +38,12 @@
 			"name"	"prestige year"
 			"stored_as_integer"	"1"
 		}
+		"117" { "name" "sticker slot 1 id" "stored_as_integer" "1" }
+		"121" { "name" "sticker slot 2 id" "stored_as_integer" "1" }
 		"137" { "name" "tournament event id" "stored_as_integer" "1" }
+		"138" { "name" "tournament event stage id" "stored_as_integer" "1" }
+		"139" { "name" "tournament event team0 id" "stored_as_integer" "1" }
+		"140" { "name" "tournament event team1 id" "stored_as_integer" "1" }
 		"185" { "name" "campaign completion bitfield" "stored_as_integer" "1" }
 		"237" { "name" "operation drops awarded 1" "stored_as_integer" "1" }
 		"240" { "name" "operation drops awarded 0" "stored_as_integer" "1" }
@@ -51,6 +56,17 @@
 		"rifle" { "item_slot" "rifle" }
 		"customplayer" { "item_slot" "customplayer" }
 		"musickit_prefab" { "item_slot" "musickit" }
+		"weapon_case_souvenirpkg" { "inv_container_and_tools" "souvenir_case" }
+	}
+
+	// the event's gold team and organiser stickers, plus a regular one and an autograph that shouldn't be picked
+	"sticker_kits"
+	{
+		"6622" { "name" "paris2023_team_vita" "tournament_event_id" "21" "tournament_team_id" "89" }
+		"6623" { "name" "paris2023_team_vita_gold" "tournament_event_id" "21" "tournament_team_id" "89" }
+		"6667" { "name" "paris2023_team_apex_gold" "tournament_event_id" "21" "tournament_team_id" "117" }
+		"6707" { "name" "paris2023_team_blst_gold" "tournament_event_id" "21" "tournament_team_id" "0" }
+		"6800" { "name" "paris2023_signature_zywoo_gold" "tournament_event_id" "21" "tournament_team_id" "89" "tournament_player_id" "153400465" }
 	}
 
 	"items"
@@ -60,6 +76,8 @@
 		"60" { "name" "weapon_m4a1_silencer" "prefab" "rifle" }
 		"5036" { "name" "customplayer_ctm_fbi" "prefab" "customplayer" }
 		"1314" { "name" "musickit" "prefab" "musickit_prefab" }
+
+		"4894" { "name" "crate_paris2023_promo_de_mirage" "prefab" "weapon_case_souvenirpkg" "attributes" { "tournament event id" "21" } }
 
 		// a tournament: viewer pass, pass with tokens, souvenir token and two coin tiers (listed out of order)
 		"4883" { "name" "tournament_pass_paris2023" "attributes" { "tournament event id" "21" } }

@@ -30,6 +30,7 @@ public:
     std::string m_name;
     std::string m_imageInventory;
     std::string m_itemSlot; // loadout category: "rifle", "customplayer", "musickit", "flair0"...
+    std::string m_containerType; // inv_container_and_tools: "tool", "souvenir_case"...
     Rarity m_rarity;
     Quality m_quality;
     uint32_t m_level;
@@ -60,6 +61,12 @@ public:
 
     uint32_t m_defIndex;
     Rarity m_rarity;
+
+    // tournament stickers, 0 when not set (team 0 is the event organiser)
+    uint32_t m_tournamentEventId;
+    uint32_t m_tournamentTeamId;
+    uint32_t m_tournamentPlayerId;
+    bool m_gold; // name ends with _gold
 };
 
 class MusicDefinitionInfo
@@ -167,6 +174,11 @@ public:
 
     // all item definitions whose internal name starts with prefix
     std::vector<ItemDefIndex> FindItemsByNamePrefix(std::string_view prefix) const;
+
+    bool IsSouvenirPackage(ItemDefIndex defIndex) const;
+
+    // the gold sticker of a team at an event (team 0 is the organiser), as a sticker kit index
+    std::optional<uint32_t> FindTournamentGoldSticker(uint32_t eventId, uint32_t teamId) const;
 
 private:
     void ParseItems(const KeyValue *itemsKey, const KeyValue *prefabsKey);

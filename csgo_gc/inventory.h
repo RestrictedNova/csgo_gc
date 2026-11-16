@@ -19,6 +19,7 @@ enum EGCItemCustomizationNotification : int;
 class InventoryModify;
 struct InventoryChangeMessages;
 struct SOCacheMessages;
+struct TournamentMatch;
 
 struct SOCacheState
 {
@@ -73,6 +74,10 @@ public:
 
     // tells the client and game server about a new player level
     InventoryChangeMessages UpdatePlayerLevel(int level);
+
+    // spends a souvenir token on a tournament coin for a package from that match's map.
+    // packageId is 0 if the coin can't redeem it
+    InventoryChangeMessages RedeemSouvenir(uint64_t coinId, uint32_t eventId, const TournamentMatch &match, uint64_t &packageId);
 
     // FIXME: unfuck this!!!
     void ResetGameServerCache()

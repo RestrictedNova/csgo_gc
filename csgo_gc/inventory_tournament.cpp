@@ -3,6 +3,7 @@
 #include "config.h"
 #include "inventory_messages.h"
 #include "inventory_modify.h"
+#include "tournament.h"
 
 // Tournament viewer passes. For an event held at <loc> (e.g. paris2023) the item schema has:
 //
@@ -146,4 +147,72 @@ InventoryChangeMessages Inventory::UseTournamentPass(Item &pass)
 
     Platform::Print("Used {}, coin {} got {} souvenir token(s)\n", name, coinId, tokens);
     return FinishChanges(modify, k_EGCItemCustomizationNotification_ActivateFanToken, { coinId });
+}
+
+InventoryChangeMessages Inventory::RedeemSouvenir(uint64_t coinId, uint32_t eventId, const TournamentMatch &match, uint64_t &packageId)
+{
+    packageId = 0;
+
+    Item *coin = FindItem(coinId);
+    std::vector<ItemDefIndex> tiers = TournamentCoinTiers(eventId);
+    if (!coin || std::find(tiers.begin(), tiers.end(), coin->DefIndex()) == tiers.end())
+    {
+        Platform::Print("Item {} is not a coin of event {}, ignoring\n", coinId, eventId);
+        return {};
+    }
+
+    // same count as the client: the tier's free packages plus tokens added minus packages redeemed
+    const uint32_t upgradeLevel = coin->HasAttribute(AttributeDefIndex::UpgradeLevel)
+        ? coin->GetAttributeValue<uint32_t>(AttributeDefIndex::UpgradeLevel)
+        : m_itemSchema.GetItemAttributeUint32(coin->DefIndex(), AttributeDefIndex::UpgradeLevel).value_or(0);
+    const uint32_t added = coin->GetAttributeValue<uint32_t>(AttributeDefIndex::OperationDropsAwarded1);
+    const uint32_t redeemed = coin->GetAttributeValue<uint32_t>(AttributeDefIndex::OperationDropsAwarded0);
+    if (upgradeLevel + added <= redeemed)
+    {
+        Platform::Print("Coin {} has no souvenir tokens left, ignoring\n", coinId);
+        return {};
+    }
+
+    // the event's souvenir package for this map, crate_<loc>_promo_<map>
+    std::optional<ItemDefIndex> packageDefIndex;
+    for (ItemDefIndex defIndex : m_itemSchema.FindItemsByNamePrefix("crate_"))
+    {
+        std::string_view name = m_itemSchema.GetItemName(defIndex);
+        if (m_itemSchema.IsSouvenirPackage(defIndex)
+            && m_itemSchema.GetItemAttributeUint32(defIndex, AttributeDefIndex::TournamentEventId) == eventId
+            && name.size() > match.map.size()
+            && name.ends_with(match.map)
+            && name[name.size() - match.map.size() - 1] == '_')
+        {
+            packageDefIndex = defIndex;
+            break;
+        }
+    }
+
+    if (!packageDefIndex)
+    {
+        Platform::Print("No souvenir package for {} at event {}, ignoring\n", match.map, eventId);
+        return {};
+    }
+
+    ItemDesc desc{};
+    if (!m_itemSchema.GetItemDesc(*packageDefIndex, ItemOriginDropped, UnacknowledgedEarned, desc))
+    {
+        return {};
+    }
+
+    InventoryModify modify;
+    Item &package = CreateItem(modify, std::move(desc));
+    modify.SetItemAttribute(package, AttributeDefIndex::TournamentEventStageId, match.stageId);
+    modify.SetItemAttribute(package, AttributeDefIndex::TournamentEventTeam0Id, match.team0->id);
+    modify.SetItemAttribute(package, AttributeDefIndex::TournamentEventTeam1Id, match.team1->id);
+
+    modify.SetItemAttribute(*coin, AttributeDefIndex::OperationDropsAwarded0, redeemed + 1);
+
+    packageId = package.FullIdFor(AccountId());
+
+    Platform::Print("Redeemed a {} souvenir package ({} vs {}) with coin {}\n",
+        match.map, match.team0->tag, match.team1->tag, coinId);
+
+    return FinishChanges(modify, k_EGCItemCustomizationNotification_GenerateSouvenir, { packageId });
 }

@@ -7,6 +7,7 @@
 #include "keyvalue.h"
 #include "networking_shared.h"
 #include "random.h"
+#include "tournament.h"
 
 #include "base_gcmessages.pb.h"
 #include "cstrike15_gcmessages.pb.h"
@@ -182,6 +183,14 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 
         case k_EMsgGCCStrike15_v2_ClientCommendPlayer:
             CommendPlayer(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchListRequestTournamentGames:
+            MatchListRequestTournamentGames(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_ClientRequestSouvenir:
+            RequestSouvenir(messageRead);
             break;
 
         default:
@@ -429,7 +438,8 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_global_stats()->set_twitch_streams_version(2);
 
     // NOTE: on 2013 this is actually game_monthly_uniques!!! probably not read there so keep the event id
-    message.mutable_global_stats()->set_active_tournament_eventid(20);
+    // 21 is Paris 2023, the last major. the coin journal and store read it
+    message.mutable_global_stats()->set_active_tournament_eventid(21);
 
     message.mutable_global_stats()->set_active_survey_id(0);
     message.mutable_global_stats()->set_required_appid_version2(13862); // csgo s2
@@ -722,6 +732,93 @@ void ClientGC::CommendPlayer(GCMessageRead &messageRead)
         message.commendation().cmd_friendly(),
         message.commendation().cmd_teaching(),
         message.commendation().cmd_leader());
+}
+
+static void BuildTournamentMatchInfo(CDataGCCStrike15_v2_MatchInfo &info, const TournamentInfo &tournament, const TournamentMatch &match)
+{
+    info.set_matchid(match.matchId);
+    info.set_matchtime(match.time);
+
+    // the client only lists matches that have tv_time set
+    WatchableMatchInfo *watchable = info.mutable_watchablematchinfo();
+    watchable->set_tv_time((match.score0 + match.score1) * 110);
+    watchable->set_game_map(std::string{ match.map });
+    watchable->set_match_id(match.matchId);
+
+    // the client reads the map, score and teams from the last round stats entry
+    CMsgGCCStrike15_v2_MatchmakingServerRoundStats *stats = info.add_roundstatsall();
+    stats->set_map(std::string{ match.map });
+    stats->add_team_scores(match.score0);
+    stats->add_team_scores(match.score1);
+    stats->set_match_result(match.score0 > match.score1 ? 1 : 2);
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *reservation = stats->mutable_reservation();
+    reservation->set_match_id(match.matchId);
+
+    TournamentEvent *event = reservation->mutable_tournament_event();
+    event->set_event_id(tournament.eventId);
+    event->set_event_name(std::string{ tournament.name });
+    event->set_event_stage_id(match.stageId);
+
+    for (const TournamentTeamInfo *team : { match.team0, match.team1 })
+    {
+        TournamentTeam *tournamentTeam = reservation->add_tournament_teams();
+        tournamentTeam->set_team_id(team->id);
+        tournamentTeam->set_team_tag(std::string{ team->tag });
+        tournamentTeam->set_team_name(std::string{ team->name });
+    }
+}
+
+void ClientGC::MatchListRequestTournamentGames(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchListRequestTournamentGames request;
+    if (!messageRead.ReadProtobuf(request))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_MatchListRequestTournamentGames failed, ignoring\n");
+        return;
+    }
+
+    CMsgGCCStrike15_v2_MatchList response;
+    response.set_msgrequestid(k_EMsgGCCStrike15_v2_MatchListRequestTournamentGames);
+    response.set_accountid(request.eventid()); // the client keys tournament lists by event id here
+    response.set_servertime(static_cast<uint32_t>(time(nullptr)));
+
+    // events we have no results for get an empty list
+    const TournamentInfo *tournament = FindTournament(request.eventid());
+    if (tournament)
+    {
+        for (const TournamentMatch &match : tournament->matches)
+        {
+            BuildTournamentMatchInfo(*response.add_matches(), *tournament, match);
+        }
+    }
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchList, response);
+}
+
+void ClientGC::RequestSouvenir(GCMessageRead &messageRead)
+{
+    // redeeming a souvenir package from a tournament match with a coin
+    CMsgGCCStrike15_v2_ClientRequestSouvenir request;
+    if (!messageRead.ReadProtobuf(request))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientRequestSouvenir failed, ignoring\n");
+        return;
+    }
+
+    const TournamentMatch *match = FindTournamentMatch(request.eventid(), request.matchid());
+    if (!match)
+    {
+        Platform::Print("No match {} at event {}, ignoring souvenir request\n", request.matchid(), request.eventid());
+        return;
+    }
+
+    uint64_t packageId;
+    InventoryChangeMessages messages = m_inventory.RedeemSouvenir(request.itemid(), request.eventid(), *match, packageId);
+    if (packageId)
+    {
+        SendInventoryChangeMessages(messages);
+    }
 }
 
 static void AddressString(uint32_t ip, uint32_t port, char *buffer, size_t bufferSize)

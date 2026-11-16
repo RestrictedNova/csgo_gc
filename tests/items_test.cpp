@@ -4,7 +4,9 @@
 #include "stdafx.h"
 #include "inventory.h"
 #include "inventory_messages.h"
+#include "item_schema.h"
 #include "keyvalue.h"
+#include "tournament.h"
 
 #include "cstrike15_gcmessages.pb.h"
 #include "econ_gcmessages.pb.h"
@@ -236,6 +238,125 @@ static void TestTournamentPasses(Inventory &inventory)
     CHECK(!saved.Item(SouvenirToken) && !saved.Item(ViewerPassPack));
 }
 
+static void TestSouvenirRedeeming(Inventory &inventory)
+{
+    // Apeks vs Vitality on Mirage, semifinal map 1
+    const TournamentMatch *match = FindTournamentMatch(21, (21ull << 32) | 13);
+    CHECK(match && match->map == "de_mirage" && match->stageId == 8);
+    if (!match)
+    {
+        return;
+    }
+
+    const KeyValue *savedCoin = SavedInventory{}.ItemWithDef("4884");
+    CHECK(savedCoin);
+    if (!savedCoin)
+    {
+        return;
+    }
+
+    const uint64_t coinId = ComposeItemId(AccountId, FromString<uint32_t>(savedCoin->Name()));
+    uint64_t packageId;
+
+    // only coins of the event can redeem
+    InventoryChangeMessages messages = inventory.RedeemSouvenir(Id(PlainRifle), 21, *match, packageId);
+    CHECK(packageId == 0);
+
+    messages = inventory.RedeemSouvenir(coinId, 21, *match, packageId);
+    CHECK(packageId != 0);
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_GenerateSouvenir);
+    CHECK(messages.notification.item_id_size() == 1 && messages.notification.item_id(0) == packageId);
+    {
+        SavedInventory saved;
+        CHECK(saved.AttributeOfDef("4894", "138") == "8");
+        CHECK(saved.AttributeOfDef("4894", "139") == "117");
+        CHECK(saved.AttributeOfDef("4894", "140") == "89");
+        CHECK(saved.AttributeOfDef("4884", "240") == "1");
+    }
+
+    // the coin had 4 tokens, 3 are left and then it's out
+    for (int i = 0; i < 3; i++)
+    {
+        inventory.RedeemSouvenir(coinId, 21, *match, packageId);
+        CHECK(packageId != 0);
+    }
+
+    inventory.RedeemSouvenir(coinId, 21, *match, packageId);
+    CHECK(packageId == 0);
+}
+
+static void TestSouvenirOpening()
+{
+    ItemSchema schema;
+
+    // a redeemed Apeks vs Vitality package
+    ItemDesc packageDesc{};
+    packageDesc.defIndex = ToEnum<ItemDefIndex>(4894);
+    packageDesc.quality = Quality::Unique;
+    packageDesc.attributes.emplace_back(AttributeDefIndex::TournamentEventStageId, 8u);
+    packageDesc.attributes.emplace_back(AttributeDefIndex::TournamentEventTeam0Id, 117u);
+    packageDesc.attributes.emplace_back(AttributeDefIndex::TournamentEventTeam1Id, 89u);
+    Item package{ 1, std::move(packageDesc) };
+
+    // what case opening rolled from it, StatTrak included
+    ItemDesc skin{};
+    skin.defIndex = ToEnum<ItemDefIndex>(7);
+    skin.quality = Quality::Strange;
+    skin.attributes.emplace_back(AttributeDefIndex::TextureWear, 0.1f);
+    skin.attributes.emplace_back(AttributeDefIndex::KillEater, 0u);
+    skin.attributes.emplace_back(AttributeDefIndex::KillEaterScoreType, 0u);
+
+    ApplySouvenirAttributes(schema, package, skin);
+
+    auto value = [&](AttributeDefIndex defIndex) -> std::optional<uint32_t>
+    {
+        for (const ItemAttribute &attribute : skin.attributes)
+        {
+            if (attribute.DefIndex() == defIndex)
+            {
+                const uint32_t *result = std::get_if<uint32_t>(&attribute.Value());
+                return result ? std::optional<uint32_t>{ *result } : std::nullopt;
+            }
+        }
+
+        return std::nullopt;
+    };
+
+    CHECK(skin.quality == Quality::Tournament);
+    CHECK(!value(AttributeDefIndex::KillEater) && !value(AttributeDefIndex::KillEaterScoreType));
+    CHECK(value(AttributeDefIndex::TournamentEventId) == 21u);
+    CHECK(value(AttributeDefIndex::TournamentEventStageId) == 8u);
+    CHECK(value(AttributeDefIndex::TournamentEventTeam0Id) == 117u);
+    CHECK(value(AttributeDefIndex::TournamentEventTeam1Id) == 89u);
+
+    // gold team stickers, then the organiser; not the regular sticker or the autograph
+    CHECK(value(AttributeDefIndex::StickerId0) == 6667u);
+    CHECK(value(AttributeDefIndex::StickerId1) == 6623u);
+    CHECK(value(AttributeDefIndex::StickerId2) == 6707u);
+}
+
+static void TestTournamentData()
+{
+    const TournamentInfo *paris = FindTournament(21);
+    CHECK(paris && paris->matches.size() == 16);
+    CHECK(!FindTournament(20));
+    if (!paris)
+    {
+        return;
+    }
+
+    std::set<uint64_t> ids;
+    for (const TournamentMatch &match : paris->matches)
+    {
+        CHECK(ids.insert(match.matchId).second);
+        CHECK(match.team0->id && match.team1->id && match.team0 != match.team1);
+        CHECK(std::max(match.score0, match.score1) == 16 && match.score0 != match.score1);
+        CHECK(match.stageId >= 5 && match.stageId <= 13);
+        CHECK(match.map.starts_with("de_"));
+        CHECK(FindTournamentMatch(21, match.matchId) == &match);
+    }
+}
+
 static void TestUseItem(Inventory &inventory)
 {
     ItemDefIndex used;
@@ -301,8 +422,12 @@ int main()
         TestCoinGraffiti(inventory);
         TestShuffle(inventory);
         TestTournamentPasses(inventory);
+        TestSouvenirRedeeming(inventory);
         TestUseItem(inventory);
     }
+
+    TestSouvenirOpening();
+    TestTournamentData();
 
     if (s_failures)
     {

@@ -64,6 +64,8 @@ private:
     void AdjustItemEquippedStateMulti(GCMessageRead &messageRead);
     void CommendPlayerQuery(GCMessageRead &messageRead);
     void CommendPlayer(GCMessageRead &messageRead);
+    void MatchListRequestTournamentGames(GCMessageRead &messageRead);
+    void RequestSouvenir(GCMessageRead &messageRead);
 
     void CraftItem(GCMessageRead &messageRead);
     void DeleteItem(GCMessageRead &messageRead);

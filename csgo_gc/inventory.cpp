@@ -7,6 +7,7 @@
 #include "inventory_modify.h"
 #include "keyvalue.h"
 #include "random.h"
+#include "tournament.h"
 
 #include "base_gcmessages.pb.h"
 #include "cstrike15_gcmessages.pb.h"
@@ -887,6 +888,11 @@ InventoryChangeMessages Inventory::UnlockCrate(uint64_t crateId, uint64_t keyId)
     {
         assert(false);
         return {};
+    }
+
+    if (m_itemSchema.IsSouvenirPackage(crate->DefIndex()))
+    {
+        ApplySouvenirAttributes(m_itemSchema, *crate, temp);
     }
 
     InventoryModify modify;

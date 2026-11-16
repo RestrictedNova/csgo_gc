@@ -119,6 +119,10 @@ PaintKitInfo::PaintKitInfo(const KeyValue &key, float fallbackMinFloat, float fa
 StickerKitInfo::StickerKitInfo(const KeyValue &key)
     : m_defIndex{ FromString<uint32_t>(key.Name()) }
     , m_rarity{ Rarity::Common }
+    , m_tournamentEventId{ key.GetNumber<uint32_t>("tournament_event_id") }
+    , m_tournamentTeamId{ key.GetNumber<uint32_t>("tournament_team_id") }
+    , m_tournamentPlayerId{ key.GetNumber<uint32_t>("tournament_player_id") }
+    , m_gold{ key.GetString("name").ends_with("_gold") }
 {
     std::string_view rarity = key.GetString("item_rarity");
     if (rarity.size())
@@ -683,6 +687,28 @@ std::optional<uint32_t> ItemSchema::GetItemAttributeUint32(ItemDefIndex defIndex
     return value ? std::optional<uint32_t>{ *value } : std::nullopt;
 }
 
+bool ItemSchema::IsSouvenirPackage(ItemDefIndex defIndex) const
+{
+    auto it = m_itemInfo.find(defIndex);
+    return it != m_itemInfo.end() && it->second.m_containerType == "souvenir_case";
+}
+
+std::optional<uint32_t> ItemSchema::FindTournamentGoldSticker(uint32_t eventId, uint32_t teamId) const
+{
+    for (const auto &[name, kit] : m_stickerKitInfo)
+    {
+        if (kit.m_gold
+            && kit.m_tournamentEventId == eventId
+            && kit.m_tournamentTeamId == teamId
+            && !kit.m_tournamentPlayerId)
+        {
+            return kit.m_defIndex;
+        }
+    }
+
+    return std::nullopt;
+}
+
 std::vector<ItemDefIndex> ItemSchema::FindItemsByNamePrefix(std::string_view prefix) const
 {
     std::vector<ItemDefIndex> result;
@@ -751,6 +777,12 @@ void ItemSchema::ParseItemRecursive(ItemInfo &info, const KeyValue &itemKey, con
     if (itemSlot.size())
     {
         info.m_itemSlot = itemSlot;
+    }
+
+    std::string_view containerType = itemKey.GetString("inv_container_and_tools");
+    if (containerType.size())
+    {
+        info.m_containerType = containerType;
     }
 
     std::string_view image = itemKey.GetString("image_inventory");
