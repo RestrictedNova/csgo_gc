@@ -1,0 +1,4 @@
+// stands in for the game's item schema, which gets merged into items_extra.txt
+"items_game"
+{
+}

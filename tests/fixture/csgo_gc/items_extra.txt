@@ -1,0 +1,27 @@
+// minimal item schema for tests: just the attributes the tests use
+"items_game"
+{
+	"attributes"
+	{
+		"7"
+		{
+			"name"	"set item texture seed"
+			"stored_as_integer"	"0"
+		}
+		"8"
+		{
+			"name"	"set item texture wear"
+			"stored_as_integer"	"0"
+		}
+		"80"
+		{
+			"name"	"kill eater"
+			"stored_as_integer"	"1"
+		}
+		"111"
+		{
+			"name"	"custom name attr"
+			"attribute_type"	"string"
+		}
+	}
+}
