@@ -430,20 +430,25 @@ static void TestStickerScraping(Inventory &inventory)
     {
         SavedInventory saved;
         CHECK(saved.Attribute(StickeredRifle, "113") == "6623");
-        std::string_view wear = saved.Attribute(StickeredRifle, "114");
-        CHECK(!wear.empty() && FromString<float>(wear) > 0.1f && FromString<float>(wear) < 0.2f);
+        CHECK(saved.Attribute(StickeredRifle, "114") == "0.1");
     }
 
-    // it comes off once fully worn
+    // 10% more each time, and the tenth scrape removes it like in the real game
     int scrapes = 1;
     while (!messages.notification.has_request() && scrapes < 20)
     {
         messages = inventory.ScrapeSticker(scrape);
         scrapes++;
+
+        if (scrapes == 9)
+        {
+            std::string_view wear = SavedInventory{}.Attribute(StickeredRifle, "114");
+            CHECK(!wear.empty() && std::abs(FromString<float>(wear) - 0.9f) < 0.001f);
+        }
     }
 
     CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_RemoveSticker);
-    CHECK(scrapes >= 9);
+    CHECK(scrapes == 10);
     CHECK(SavedInventory{}.Attribute(StickeredRifle, "113").empty());
 
     // patches come off agents in one go

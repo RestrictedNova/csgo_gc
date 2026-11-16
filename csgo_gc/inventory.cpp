@@ -1037,29 +1037,29 @@ InventoryChangeMessages Inventory::ScrapeSticker(const CMsgApplySticker &message
 
     auto attributeStickerWear = StickerAttributeForSlot(AttributeDefIndex::StickerWear0, message.sticker_slot());
 
-    // mikkotodo randomize
-    float wearIncrement = 1.0f / 9;
+    // like the real game: each scrape adds 10% wear and the tenth one removes the sticker
+    constexpr float WearPerScrape = 0.1f;
 
-    // patches go on agents and come off in one go, stickers wear down with each scrape and come
-    // off once fully worn. a sticker without a wear attribute (souvenir stickers, or ones added
-    // with an editor) is unworn, it used to be mistaken for a patch and removed on the first scrape
+    // patches go on agents (the client decides the same way) and come off in one go. a sticker
+    // without a wear attribute (souvenir stickers, or ones added with an editor) is unworn, it
+    // used to be mistaken for a patch and removed on the first scrape
     const bool isPatch = m_itemSchema.GetItemSlot(item->DefIndex()) == "customplayer";
 
-    AttributeIncrement wearUpdate = AttributeIncrement::NoAttribute;
+    bool removed = true;
     if (!isPatch)
     {
-        if (item->HasAttribute(attributeStickerWear))
+        float wear = item->HasAttribute(attributeStickerWear) ? item->GetAttributeValue<float>(attributeStickerWear) : 0.0f;
+        float newWear = wear + WearPerScrape;
+
+        // half a step of slack so float drift can't add an eleventh scrape
+        if (newWear < 1.0f - WearPerScrape / 2)
         {
-            wearUpdate = modify.IncrementItemAttribute(*item, attributeStickerWear, wearIncrement, 0.0f, 1.0f);
-        }
-        else
-        {
-            modify.SetItemAttribute(*item, attributeStickerWear, wearIncrement);
-            wearUpdate = AttributeIncrement::Ok;
+            modify.SetItemAttribute(*item, attributeStickerWear, newWear);
+            removed = false;
         }
     }
 
-    if (wearUpdate != AttributeIncrement::Ok)
+    if (removed)
     {
         EGCItemCustomizationNotification request = isPatch
             ? k_EGCItemCustomizationNotification_RemovePatch
