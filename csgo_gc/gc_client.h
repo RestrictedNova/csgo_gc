@@ -65,6 +65,7 @@ private:
     void CommendPlayerQuery(GCMessageRead &messageRead);
     void CommendPlayer(GCMessageRead &messageRead);
     void MatchListRequestTournamentGames(GCMessageRead &messageRead);
+    void MatchListRequestTournamentPredictions(GCMessageRead &messageRead);
     void RequestSouvenir(GCMessageRead &messageRead);
 
     void CraftItem(GCMessageRead &messageRead);

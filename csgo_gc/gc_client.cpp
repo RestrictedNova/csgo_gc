@@ -189,6 +189,10 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             MatchListRequestTournamentGames(messageRead);
             break;
 
+        case k_EMsgGCCStrike15_v2_MatchListRequestTournamentPredictions:
+            MatchListRequestTournamentPredictions(messageRead);
+            break;
+
         case k_EMsgGCCStrike15_v2_ClientRequestSouvenir:
             RequestSouvenir(messageRead);
             break;
@@ -794,6 +798,23 @@ void ClientGC::MatchListRequestTournamentGames(GCMessageRead &messageRead)
     }
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchList, response);
+}
+
+void ClientGC::MatchListRequestTournamentPredictions(GCMessageRead &messageRead)
+{
+    // the tournament page asks for our Pick'em picks every few seconds until it has them. the GC
+    // answers with the same message, and we never made any. the Pick'em tabs still can't show
+    // without the event's Pick'em layout, which we don't have, but the asking stops
+    CMsgGCCStrike15_v2_Predictions request;
+    if (!messageRead.ReadProtobuf(request))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_Predictions failed, ignoring\n");
+        return;
+    }
+
+    CMsgGCCStrike15_v2_Predictions response;
+    response.set_event_id(request.event_id());
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchListRequestTournamentPredictions, response);
 }
 
 void ClientGC::RequestSouvenir(GCMessageRead &messageRead)
