@@ -36,6 +36,10 @@ enum TestItem : uint32_t
     PlainRifle = 4,
     BonusRank = 5,
     Coin = 6,
+    M4A4 = 7, // equipped for CT in rifle slot 15
+    M4A1S = 8,
+    Agent = 9,
+    MusicKit = 10,
 };
 
 static uint64_t Id(TestItem item)
@@ -56,6 +60,11 @@ static void WriteInventory()
     "4" { "inventory" "4" "def_index" "7" "level" "1" "quality" "4" "flags" "0" "origin" "8" "in_use" "0" "rarity" "3" }
     "5" { "inventory" "5" "def_index" "4607" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
     "6" { "inventory" "6" "def_index" "4874" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "7" { "inventory" "7" "def_index" "16" "level" "1" "quality" "4" "flags" "0" "origin" "8" "in_use" "0" "rarity" "3"
+          "equipped_state" { "3" "15" } }
+    "8" { "inventory" "8" "def_index" "60" "level" "1" "quality" "4" "flags" "0" "origin" "8" "in_use" "0" "rarity" "3" }
+    "9" { "inventory" "9" "def_index" "5036" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "5" }
+    "10" { "inventory" "10" "def_index" "1314" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "3" }
 }
 )",
         f);
@@ -81,6 +90,14 @@ struct SavedInventory
         const KeyValue *saved = Item(item);
         const KeyValue *attributes = saved ? saved->GetSubkey("attributes") : nullptr;
         return attributes ? attributes->GetString(defIndex) : std::string_view{};
+    }
+
+    // the slot an item is equipped in for a class, empty if it isn't
+    std::string_view EquippedSlot(TestItem item, std::string_view classId) const
+    {
+        const KeyValue *saved = Item(item);
+        const KeyValue *equipped = saved ? saved->GetSubkey("equipped_state") : nullptr;
+        return equipped ? equipped->GetString(classId) : std::string_view{};
     }
 
     KeyValueRead read;
@@ -121,6 +138,25 @@ static void TestCoinGraffiti(Inventory &inventory)
     SavedInventory saved;
     CHECK(saved.Attribute(Coin, "113") == "42");
     CHECK(saved.Attribute(Coin, "6").empty());
+}
+
+static void TestShuffle(Inventory &inventory)
+{
+    CMsgAdjustItemEquippedStateMulti message;
+    message.add_ct_equips(Id(M4A1S)); // shares the M4A4's slot
+    message.add_t_equips(Id(Agent)); // agents have one slot
+    message.add_noteam_equips(Id(MusicKit)); // so do music kits
+    message.add_ct_equips(Id(PlainRifle)); // an AK has no slot for CT here, skipped
+
+    InventoryChangeMessages messages = inventory.EquipItemsMulti(message);
+    CHECK(messages.client.updated.objects_modified_size() >= 3);
+
+    SavedInventory saved;
+    CHECK(saved.EquippedSlot(M4A1S, "3") == "15");
+    CHECK(saved.EquippedSlot(M4A4, "3").empty());
+    CHECK(saved.EquippedSlot(Agent, "2") == "38");
+    CHECK(saved.EquippedSlot(MusicKit, "0") == "54");
+    CHECK(saved.EquippedSlot(PlainRifle, "3").empty());
 }
 
 static void TestUseItem(Inventory &inventory)
@@ -186,6 +222,7 @@ int main()
 
         TestStatTrakSwap(inventory);
         TestCoinGraffiti(inventory);
+        TestShuffle(inventory);
         TestUseItem(inventory);
     }
 

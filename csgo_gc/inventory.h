@@ -5,6 +5,7 @@
 #include "item.h"
 #include "item_schema.h"
 
+class CMsgAdjustItemEquippedStateMulti;
 class CMsgApplySticker;
 class CMsgSetItemPositions;
 class CMsgItemAcknowledged;
@@ -39,6 +40,9 @@ public:
     void BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level, bool server);
 
     InventoryChangeMessages EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId);
+
+    // loadout shuffle: equips items for each team without being told the slots, see FindLoadoutSlot
+    InventoryChangeMessages EquipItemsMulti(const CMsgAdjustItemEquippedStateMulti &message);
     InventoryChangeMessages RemoveItem(uint64_t itemId);
     // usedDefIndex is the def index of the item that was used, so the caller can
     // handle effects outside the inventory (bonus ranks raise the player level)
@@ -109,6 +113,9 @@ private:
     void WriteToFile() const;
 
     bool EquipItem(InventoryModify &modify, uint64_t itemId, uint32_t classId, uint32_t slotId);
+
+    // the loadout slot an item of this definition goes into for a class, if it can be worked out
+    std::optional<uint32_t> FindLoadoutSlot(uint32_t classId, uint32_t defIndex) const;
     bool UnequipItem(InventoryModify &modify, uint64_t itemId);
     void UnequipItem(InventoryModify &modify, uint32_t classId, uint32_t slotId);
 

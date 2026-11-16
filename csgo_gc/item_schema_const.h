@@ -107,5 +107,18 @@ enum class AttributeDefIndex : uint32_t
 // better location would be gc_const_csgo.h
 enum LoadoutSlot : uint32_t
 {
+    LoadoutSlotMelee = 0,
+    LoadoutSlotAgent = 38,
+    LoadoutSlotGloves = 41,
+    LoadoutSlotMusicKit = 54,
+    LoadoutSlotFlair = 55,
     LoadoutSlotGraffiti = 56
+};
+
+// the class (team) an item is equipped for
+enum LoadoutClass : uint32_t
+{
+    ClassNoTeam = 0,
+    ClassTerrorist = 2,
+    ClassCounterTerrorist = 3
 };

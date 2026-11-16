@@ -29,6 +29,7 @@ public:
     ItemDefIndex m_defIndex;
     std::string m_name;
     std::string m_imageInventory;
+    std::string m_itemSlot; // loadout category: "rifle", "customplayer", "musickit", "flair0"...
     Rarity m_rarity;
     Quality m_quality;
     uint32_t m_level;
@@ -154,6 +155,9 @@ public:
 
     // a year's service medal tiers, lowest first. nullptr if the year has none
     const std::vector<ItemDefIndex> *GetPrestigeCoins(uint32_t year) const;
+
+    // the loadout category ("item_slot") of an item definition, empty if unknown
+    std::string_view GetItemSlot(ItemDefIndex defIndex) const;
 
 private:
     void ParseItems(const KeyValue *itemsKey, const KeyValue *prefabsKey);

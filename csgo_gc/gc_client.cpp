@@ -172,6 +172,18 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             RecurringSubscriptionStatus();
             break;
 
+        case k_EMsgGCAdjustItemEquippedStateMulti:
+            AdjustItemEquippedStateMulti(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_ClientCommendPlayerQuery:
+            CommendPlayerQuery(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_ClientCommendPlayer:
+            CommendPlayer(messageRead);
+            break;
+
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message {}\n",
                 MessageName(messageRead.TypeUnmasked()));
@@ -650,6 +662,66 @@ void ClientGC::RecurringSubscriptionStatus()
 
     SendMessageToGame(false, k_EGCMsgRecurringSubscriptionStatusChange, response);
     Platform::Print("Answered stats subscription status: renews automatically\n");
+}
+
+void ClientGC::AdjustItemEquippedStateMulti(GCMessageRead &messageRead)
+{
+    // sent by loadout shuffle, at most once a minute outside of games
+    CMsgAdjustItemEquippedStateMulti message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgAdjustItemEquippedStateMulti failed, ignoring\n");
+        return;
+    }
+
+    InventoryChangeMessages messages = m_inventory.EquipItemsMulti(message);
+    SendInventoryChangeMessages(messages);
+}
+
+// commends left to give, the commend popup shows this. there's no weekly limit here
+constexpr uint32_t CommendationTokens = 3;
+
+void ClientGC::CommendPlayerQuery(GCMessageRead &messageRead)
+{
+    // the commend popup asks how many commends we have left and what we gave this player before,
+    // it shows "Failed to load commendations" after 10 seconds without an answer
+    CMsgGCCStrike15_v2_ClientCommendPlayer request;
+    if (!messageRead.ReadProtobuf(request))
+    {
+        Platform::Print("Parsing commend query failed, ignoring\n");
+        return;
+    }
+
+    CMsgGCCStrike15_v2_ClientCommendPlayer response;
+    response.set_account_id(request.account_id());
+    response.set_tokens(CommendationTokens);
+
+    auto it = m_commendations.find(request.account_id());
+    if (it != m_commendations.end())
+    {
+        *response.mutable_commendation() = it->second;
+    }
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientCommendPlayerQueryResponse, response);
+}
+
+void ClientGC::CommendPlayer(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_ClientCommendPlayer message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_ClientCommendPlayer failed, ignoring\n");
+        return;
+    }
+
+    // only remembered for this session, the other player's commend counts come from their own config
+    m_commendations[message.account_id()] = message.commendation();
+
+    Platform::Print("Commended account {}: friendly {}, teaching {}, leader {}\n",
+        message.account_id(),
+        message.commendation().cmd_friendly(),
+        message.commendation().cmd_teaching(),
+        message.commendation().cmd_leader());
 }
 
 static void AddressString(uint32_t ip, uint32_t port, char *buffer, size_t bufferSize)

@@ -61,6 +61,9 @@ private:
     void StatTrakSwap(GCMessageRead &messageRead);
     void ModifyItemAttribute(GCMessageRead &messageRead);
     void RecurringSubscriptionStatus();
+    void AdjustItemEquippedStateMulti(GCMessageRead &messageRead);
+    void CommendPlayerQuery(GCMessageRead &messageRead);
+    void CommendPlayer(GCMessageRead &messageRead);
 
     void CraftItem(GCMessageRead &messageRead);
     void DeleteItem(GCMessageRead &messageRead);
@@ -88,6 +91,9 @@ private:
     // start from config.txt, claiming a service medal resets them for the session
     int m_level;
     int m_xp;
+
+    // commendations given this session by account id, so the commend popup shows them again
+    std::unordered_map<uint32_t, PlayerCommendationInfo> m_commendations;
 
     uint64_t m_serverSteamId{};
     std::unordered_map<uint32_t, AuthTicket> m_tickets;

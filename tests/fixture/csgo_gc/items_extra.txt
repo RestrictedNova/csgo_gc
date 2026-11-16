@@ -40,9 +40,23 @@
 		}
 	}
 
-	// service medals, shaped like the real ones (fewer tiers)
+	// loadout categories, inherited by the items below like in the real schema
+	"prefabs"
+	{
+		"rifle" { "item_slot" "rifle" }
+		"customplayer" { "item_slot" "customplayer" }
+		"musickit_prefab" { "item_slot" "musickit" }
+	}
+
 	"items"
 	{
+		"7" { "name" "weapon_ak47" "prefab" "rifle" }
+		"16" { "name" "weapon_m4a1" "prefab" "rifle" }
+		"60" { "name" "weapon_m4a1_silencer" "prefab" "rifle" }
+		"5036" { "name" "customplayer_ctm_fbi" "prefab" "customplayer" }
+		"1314" { "name" "musickit" "prefab" "musickit_prefab" }
+
+		// service medals, shaped like the real ones (fewer tiers)
 		"4820"
 		{
 			"name"	"prestige coin 2022 level 2"

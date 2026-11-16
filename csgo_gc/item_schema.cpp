@@ -658,6 +658,12 @@ const std::vector<ItemDefIndex> *ItemSchema::GetPrestigeCoins(uint32_t year) con
     return it != m_prestigeCoins.end() ? &it->second : nullptr;
 }
 
+std::string_view ItemSchema::GetItemSlot(ItemDefIndex defIndex) const
+{
+    auto it = m_itemInfo.find(defIndex);
+    return it != m_itemInfo.end() ? std::string_view{ it->second.m_itemSlot } : std::string_view{};
+}
+
 // i hate my life
 static std::vector<std::string_view> SplitString(std::string_view input, char delimiter)
 {
@@ -706,6 +712,12 @@ void ItemSchema::ParseItemRecursive(ItemInfo &info, const KeyValue &itemKey, con
     if (name.size())
     {
         info.m_name = name;
+    }
+
+    std::string_view itemSlot = itemKey.GetString("item_slot");
+    if (itemSlot.size())
+    {
+        info.m_itemSlot = itemSlot;
     }
 
     std::string_view image = itemKey.GetString("image_inventory");

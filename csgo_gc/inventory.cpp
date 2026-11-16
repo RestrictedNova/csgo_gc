@@ -580,6 +580,124 @@ InventoryChangeMessages Inventory::EquipItem(uint64_t itemId, uint32_t classId, 
     return FinishChanges(modify);
 }
 
+// weapons that can take each other's loadout slot, by def index
+static constexpr std::array<std::array<uint32_t, 3>, 5> InterchangeableWeapons{ {
+    { 16, 60, 0 }, // M4A4, M4A1-S
+    { 61, 32, 0 }, // USP-S, P2000
+    { 3, 30, 63 }, // Five-SeveN, Tec-9, CZ75-Auto
+    { 1, 64, 0 }, // Desert Eagle, R8 Revolver
+    { 33, 23, 0 }, // MP7, MP5-SD
+} };
+
+static bool SameLoadoutSlot(uint32_t defIndexA, uint32_t defIndexB)
+{
+    if (defIndexA == defIndexB)
+    {
+        return true;
+    }
+
+    for (const auto &group : InterchangeableWeapons)
+    {
+        bool hasA = std::find(group.begin(), group.end(), defIndexA) != group.end();
+        bool hasB = std::find(group.begin(), group.end(), defIndexB) != group.end();
+        if (hasA && hasB)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::optional<uint32_t> Inventory::FindLoadoutSlot(uint32_t classId, uint32_t defIndex) const
+{
+    // categories with a single slot (positions from the shuffle code in client.dll,
+    // the names in items_game.txt player_loadout_slots are outdated)
+    std::string_view category = m_itemSchema.GetItemSlot(ToEnum<ItemDefIndex>(defIndex));
+    if (category == "melee")
+    {
+        return LoadoutSlotMelee;
+    }
+    else if (category == "customplayer")
+    {
+        return LoadoutSlotAgent;
+    }
+    else if (category == "clothing")
+    {
+        return LoadoutSlotGloves;
+    }
+    else if (category == "musickit")
+    {
+        return LoadoutSlotMusicKit;
+    }
+    else if (category == "flair0")
+    {
+        return LoadoutSlotFlair;
+    }
+
+    // weapons have five or six positions per category and the player picks which weapon goes where,
+    // so use the slot of the same weapon (or one that shares its slot) equipped for this class
+    for (const auto &[itemId, item] : m_items)
+    {
+        for (const ItemEquip &equip : item.GetDesc().equips)
+        {
+            if (equip.Class() == classId && SameLoadoutSlot(FromEnum(item.DefIndex()), defIndex))
+            {
+                return equip.Slot();
+            }
+        }
+    }
+
+    for (const DefaultEquip &defaultEquip : m_defaultEquips)
+    {
+        if (defaultEquip.classId == classId && SameLoadoutSlot(defaultEquip.defIndex, defIndex))
+        {
+            return defaultEquip.slotId;
+        }
+    }
+
+    return std::nullopt;
+}
+
+InventoryChangeMessages Inventory::EquipItemsMulti(const CMsgAdjustItemEquippedStateMulti &message)
+{
+    InventoryModify modify;
+
+    auto equipAll = [&](const google::protobuf::RepeatedField<uint64_t> &itemIds, uint32_t classId)
+    {
+        for (uint64_t itemId : itemIds)
+        {
+            uint32_t defIndex, paintKitIndex;
+            if (!IsDefaultItemId(itemId, defIndex, paintKitIndex))
+            {
+                const Item *item = FindItem(itemId);
+                if (!item)
+                {
+                    Platform::Print("EquipItemsMulti: no such item {}\n", itemId);
+                    continue;
+                }
+
+                defIndex = FromEnum(item->DefIndex());
+            }
+
+            std::optional<uint32_t> slotId = FindLoadoutSlot(classId, defIndex);
+            if (!slotId)
+            {
+                Platform::Print("EquipItemsMulti: no slot for item {} (def index {}) class {}\n", itemId, defIndex, classId);
+                continue;
+            }
+
+            EquipItem(modify, itemId, classId, *slotId);
+        }
+    };
+
+    equipAll(message.t_equips(), ClassTerrorist);
+    equipAll(message.ct_equips(), ClassCounterTerrorist);
+    equipAll(message.noteam_equips(), ClassNoTeam);
+
+    return FinishChanges(modify);
+}
+
 bool Inventory::EquipItem(InventoryModify &modify, uint64_t itemId, uint32_t classId, uint32_t slotId)
 {
     if (slotId == SlotUneqip)
