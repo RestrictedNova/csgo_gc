@@ -38,9 +38,11 @@ add_library(csgo_gc STATIC
     item_schema.cpp
     keyvalue.cpp
     main.cpp
+    match_tracker.cpp
     message.cpp
     networking_client.cpp
     networking_server.cpp
+    progress.cpp
     random.cpp
     steam_callbacks.cpp
     steam_hook.cpp

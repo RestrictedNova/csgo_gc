@@ -2,6 +2,7 @@
 #include "steamgamecoordinatorproxy.h"
 #include "gc_client.h"
 #include "gc_server.h"
+#include "match_tracker.h"
 #include "steam_callbacks.h"
 
 struct SteamNetworkingIdentity;
@@ -51,6 +52,7 @@ class SteamGameCoordinatorProxyClient final : public SteamGameCoordinatorProxy
 {
 public:
     SteamGameCoordinatorProxyClient(ISteamClient &steamClient, HSteamPipe pipe, HSteamUser user, CCallbackMgr &callbackMgr);
+    ~SteamGameCoordinatorProxyClient();
 
     SharedGC &GetGC() override;
     void RunFrame() override;
@@ -141,6 +143,11 @@ SteamGameCoordinatorProxyClient::SteamGameCoordinatorProxyClient(ISteamClient &s
 {
 }
 
+SteamGameCoordinatorProxyClient::~SteamGameCoordinatorProxyClient()
+{
+    MatchWatcher::Shutdown();
+}
+
 SharedGC &SteamGameCoordinatorProxyClient::GetGC()
 {
     return m_gc;
@@ -148,6 +155,9 @@ SharedGC &SteamGameCoordinatorProxyClient::GetGC()
 
 void SteamGameCoordinatorProxyClient::RunFrame()
 {
+    // matches against bots on a local server, for rank_progress
+    MatchWatcher::Update(m_gc);
+
     // poll events
     std::vector<EventData> events;
     m_gc.GetHostEvents(events);

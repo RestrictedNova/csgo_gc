@@ -61,3 +61,9 @@
 // and your skill groups on the player card, and remove the "Legacy version of CS:GO"
 // popup from the main menu (windows only for now)
 "restore_disabled_ui"	"1"
+
+// earn your level, XP and skill groups by playing competitive and wingman against bots
+// (Practice with bots), saved to csgo_gc/progress.txt. replaces "ranks", "player_level" and
+// "player_cur_xp" above, and a new progress file starts like a new account: level 1, no
+// skill groups. harder bots let you climb higher (windows only for now)
+"rank_progress"	"0"

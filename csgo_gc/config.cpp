@@ -76,6 +76,7 @@ void GCConfig::Load()
     m_currency = config.GetNumber("currency", m_currency);
 
     m_restoreDisabledUI = config.GetNumber("restore_disabled_ui", m_restoreDisabledUI);
+    m_rankProgress = config.GetNumber("rank_progress", m_rankProgress);
 }
 
 float GCConfig::GetRarityWeight(Rarity rarity) const

@@ -18,6 +18,7 @@ enum class GCEvent
     // client
     SetAuthTicket, // id contains the ticket handle, buffer contains the ticket
     ClearAuthTicket, // id contains the ticket handle
+    MatchResult, // buffer contains a MatchResult, a match against bots ended
 
     // server
     ClientConnected, // id contains the steam id, buffer contains the ticket

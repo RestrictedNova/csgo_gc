@@ -47,6 +47,10 @@ public:
     // bring back UI the final build switched off (player card rank and skill groups)
     bool m_restoreDisabledUI{ true };
 
+    // level, XP and skill groups come from matches against bots, saved to csgo_gc/progress.txt,
+    // instead of the fixed ranks, player_level and player_cur_xp here
+    bool m_rankProgress{ false };
+
     bool m_vacBanned{ false };
     int m_commendedFriendly{ 0 };
     int m_commendedTeaching{ 0 };

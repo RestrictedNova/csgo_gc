@@ -30,6 +30,13 @@ ClientGC::ClientGC(uint64_t steamId)
     // also called from ServerGC's constructor
     Graffiti::Initialize();
 
+    if (GetConfig().m_rankProgress)
+    {
+        m_progress.Load();
+        m_level = m_progress.Level();
+        m_xp = m_progress.Xp();
+    }
+
     StartThread();
 
     Platform::Print("ClientGC spawned for user {}\n", steamId);
@@ -63,6 +70,15 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, std::vector<uint8_t> &&buf
 
     case GCEvent::Tick:
         InventoryUpdate();
+        break;
+
+    case GCEvent::MatchResult:
+        if (buffer.size() == sizeof(MatchResult))
+        {
+            MatchResult result;
+            memcpy(&result, buffer.data(), sizeof(result));
+            OnMatchResult(result);
+        }
         break;
 
     default:
@@ -451,9 +467,10 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.set_vac_banned(GetConfig().m_vacBanned);
 
     // set competitive rank and wins here for old builds
+    const RankInfo competitive = CompetitiveRank();
     message.mutable_ranking()->set_account_id(AccountId());
-    message.mutable_ranking()->set_rank_id(GetConfig().m_competitiveRank);
-    message.mutable_ranking()->set_wins(GetConfig().m_competitiveWins);
+    message.mutable_ranking()->set_rank_id(competitive.rankId);
+    message.mutable_ranking()->set_wins(competitive.wins);
 
     message.mutable_commendation()->set_cmd_friendly(GetConfig().m_commendedFriendly);
     message.mutable_commendation()->set_cmd_teaching(GetConfig().m_commendedTeaching);
@@ -477,29 +494,119 @@ void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike1
     message.set_txn_country_code(GetConfig().m_country);
 }
 
-void ClientGC::SendRankUpdate()
+ClientGC::RankInfo ClientGC::CompetitiveRank() const
+{
+    if (GetConfig().m_rankProgress)
+    {
+        const uint32_t now = static_cast<uint32_t>(time(nullptr));
+        return { m_progress.SkillGroup(RankedMode::Competitive, now), static_cast<uint32_t>(m_progress.Skill(RankedMode::Competitive).wins) };
+    }
+
+    return { GetConfig().m_competitiveRank, static_cast<uint32_t>(GetConfig().m_competitiveWins) };
+}
+
+ClientGC::RankInfo ClientGC::WingmanRank() const
+{
+    if (GetConfig().m_rankProgress)
+    {
+        const uint32_t now = static_cast<uint32_t>(time(nullptr));
+        return { m_progress.SkillGroup(RankedMode::Wingman, now), static_cast<uint32_t>(m_progress.Skill(RankedMode::Wingman).wins) };
+    }
+
+    return { GetConfig().m_wingmanRank, static_cast<uint32_t>(GetConfig().m_wingmanWins) };
+}
+
+ClientGC::RankInfo ClientGC::DangerZoneRank() const
+{
+    // bots don't play danger zone, so a new account stays unranked there
+    if (GetConfig().m_rankProgress)
+    {
+        return { DangerZoneRankNone, 0 };
+    }
+
+    return { GetConfig().m_dangerZoneRank, static_cast<uint32_t>(GetConfig().m_dangerZoneWins) };
+}
+
+void ClientGC::SendRankUpdate(RankType changedType, float rankChange)
 {
     CMsgGCCStrike15_v2_ClientGCRankUpdate message;
 
-    PlayerRankingInfo *rank = message.add_rankings();
-    rank->set_account_id(AccountId());
-    rank->set_rank_id(GetConfig().m_competitiveRank);
-    rank->set_wins(GetConfig().m_competitiveWins);
-    rank->set_rank_type_id(RankTypeCompetitive);
+    auto add = [&](RankType type, RankInfo info)
+    {
+        PlayerRankingInfo *rank = message.add_rankings();
+        rank->set_account_id(AccountId());
+        rank->set_rank_id(info.rankId);
+        rank->set_wins(info.wins);
+        rank->set_rank_type_id(type);
+        if (type == changedType)
+        {
+            rank->set_rank_change(rankChange);
+        }
+    };
 
-    rank = message.add_rankings();
-    rank->set_account_id(AccountId());
-    rank->set_rank_id(GetConfig().m_wingmanRank);
-    rank->set_wins(GetConfig().m_wingmanWins);
-    rank->set_rank_type_id(RankTypeWingman);
-
-    rank = message.add_rankings();
-    rank->set_account_id(AccountId());
-    rank->set_rank_id(GetConfig().m_dangerZoneRank);
-    rank->set_wins(GetConfig().m_dangerZoneWins);
-    rank->set_rank_type_id(RankTypeDangerZone);
+    add(RankTypeCompetitive, CompetitiveRank());
+    add(RankTypeWingman, WingmanRank());
+    add(RankTypeDangerZone, DangerZoneRank());
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
+}
+
+void ClientGC::SetLevel(int level, int xp)
+{
+    m_level = level;
+    m_xp = xp;
+
+    if (GetConfig().m_rankProgress)
+    {
+        m_progress.SetLevel(level, xp);
+        m_progress.Save();
+    }
+
+    SendPlayerLevel();
+}
+
+void ClientGC::OnMatchResult(const MatchResult &result)
+{
+    if (!GetConfig().m_rankProgress)
+    {
+        return;
+    }
+
+    const uint32_t now = static_cast<uint32_t>(time(nullptr));
+    const PlayerProgress::MatchUpdate update = m_progress.ApplyMatch(result, now);
+    m_progress.Save();
+
+    m_level = m_progress.Level();
+    m_xp = m_progress.Xp();
+    SendPlayerLevel();
+
+    const RankType type = result.mode == RankedMode::Wingman ? RankTypeWingman : RankTypeCompetitive;
+    SendRankUpdate(type, static_cast<float>(static_cast<int>(update.newRank) - static_cast<int>(update.oldRank)));
+
+    const char *outcome = "lost";
+    if (result.abandoned)
+    {
+        outcome = "abandoned";
+    }
+    else if (result.outcome == MatchOutcome::Win)
+    {
+        outcome = "won";
+    }
+    else if (result.outcome == MatchOutcome::Tie)
+    {
+        outcome = "tied";
+    }
+
+    const SkillRating &skill = m_progress.Skill(result.mode);
+    Platform::Print("{} {} match {}-{} against bot difficulty {} ({} kills, {} deaths, {} MVPs)\n",
+        result.mode == RankedMode::Wingman ? "Wingman" : "Competitive", outcome,
+        result.roundsWon, result.roundsLost, result.botDifficulty, result.kills, result.deaths, result.mvps);
+    Platform::Print("Rating {:.0f} -> {:.0f}, skill group {} -> {}, {}/{} wins for a skill group\n",
+        update.oldRating, update.newRating, FromEnum(update.oldRank), FromEnum(update.newRank),
+        std::min(skill.wins, Progress::WinsForSkillGroup), Progress::WinsForSkillGroup);
+    Platform::Print("+{} XP ({} earned, {} weekly bonus), level {} -> {} ({}/{} XP)\n",
+        update.gainedXp, update.earnedXp, update.gainedXp - update.earnedXp,
+        update.oldLevel, update.newLevel, m_xp, Progress::XpPerLevel);
 }
 
 void ClientGC::SendPlayerLevel()
@@ -608,9 +715,7 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
 
     if (usedDefIndex == ItemDefIndex::BonusRank)
     {
-        m_level = std::min(m_level + 1, MaxPlayerLevel);
-        m_xp = 0;
-        SendPlayerLevel();
+        SetLevel(std::min(m_level + 1, MaxPlayerLevel), 0);
 
         // shows the "new rank" popup, the client checks for a zero result and the bonus rank def index
         GCMessageWrite response{ k_EMsgGCUseItemResponse };
@@ -620,7 +725,7 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
         uint32_t typeMasked = response.TypeMasked();
         PostToHost(HostEvent::Message, typeMasked, std::move(response).TakeBuffer());
 
-        Platform::Print("Used a bonus rank, level {} until restart\n", m_level);
+        Platform::Print("Used a bonus rank, level {}{}\n", m_level, GetConfig().m_rankProgress ? "" : " until restart");
     }
 }
 
@@ -1117,7 +1222,7 @@ void ClientGC::OnPartyRegister(GCMessageRead &messageRead)
     response.set_id(lobbyId);
     response.set_ver(message.ver());
     response.set_apr(1);
-    response.set_ark(static_cast<uint32_t>(GetConfig().m_competitiveRank) * 10);
+    response.set_ark(CompetitiveRank().rankId * 10);
     response.set_grp(3);
     response.set_slots(5);
     response.set_launcher(message.launcher());
@@ -1176,15 +1281,13 @@ void ClientGC::RequestPrestigeCoin(GCMessageRead &messageRead)
     // the item has to reach the client before the answer, which opens a preview of it
     SendInventoryChangeMessages(messages);
 
-    m_level = 1;
-    m_xp = 0;
-    SendPlayerLevel();
+    SetLevel(1, 0);
 
     response.set_defindex(request.defindex());
     response.set_upgradeid(coinItemId);
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin, response);
 
-    Platform::Print("Claimed service medal {}, level reset to 1 until restart\n", request.defindex());
+    Platform::Print("Claimed service medal {}, level reset to 1{}\n", request.defindex(), GetConfig().m_rankProgress ? "" : " until restart");
 }
 
 void ClientGC::CraftItem(GCMessageRead &messageRead)

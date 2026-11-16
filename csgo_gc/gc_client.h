@@ -3,6 +3,7 @@
 #include "gc_const.h"
 #include "gc_shared.h"
 #include "inventory.h"
+#include "progress.h"
 
 class GCMessageRead;
 
@@ -82,8 +83,24 @@ private:
     void BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &message);
     void BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
         const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello);
-    void SendRankUpdate();
+    void SendRankUpdate(RankType changedType = RankType{}, float rankChange = 0);
     void SendPlayerLevel();
+
+    // a match against bots ended (rank_progress)
+    void OnMatchResult(const MatchResult &result);
+
+    // the level or XP changed (service medal, bonus rank, a match), saves it with rank_progress
+    void SetLevel(int level, int xp);
+
+    struct RankInfo
+    {
+        uint32_t rankId;
+        uint32_t wins;
+    };
+
+    RankInfo CompetitiveRank() const;
+    RankInfo WingmanRank() const;
+    RankInfo DangerZoneRank() const;
 
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
 
@@ -91,7 +108,11 @@ private:
 
     Inventory m_inventory;
 
-    // start from config.txt, claiming a service medal resets them for the session
+    // with rank_progress: level, XP and skill groups from matches against bots, saved
+    PlayerProgress m_progress;
+
+    // from config.txt, or the saved progress with rank_progress. without it claiming a service
+    // medal or using a bonus rank only lasts for the session
     int m_level;
     int m_xp;
 
