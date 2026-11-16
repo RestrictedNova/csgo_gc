@@ -6,6 +6,7 @@
 #include "inventory_messages.h"
 #include "keyvalue.h"
 
+#include "cstrike15_gcmessages.pb.h"
 #include "econ_gcmessages.pb.h"
 #include "gcsdk_gcmessages.pb.h"
 
@@ -139,6 +140,35 @@ static void TestUseItem(Inventory &inventory)
     CHECK(!saved.Item(BonusRank));
 }
 
+static const CMsgSOCacheSubscribed_SubscribedType *FindObjects(const CMsgSOCacheSubscribed &message, uint32_t type)
+{
+    for (const CMsgSOCacheSubscribed_SubscribedType &objects : message.objects())
+    {
+        if (objects.type_id() == type)
+        {
+            return &objects;
+        }
+    }
+
+    return nullptr;
+}
+
+static void TestStatsSubscription(const CMsgSOCacheSubscribed &client, const CMsgSOCacheSubscribed &server)
+{
+    // the client gets an active subscription so the stats page opens
+    const CMsgSOCacheSubscribed_SubscribedType *objects = FindObjects(client, SOTypeRecurringSubscription);
+    CHECK(objects && objects->object_data_size() == 1);
+    if (objects && objects->object_data_size() == 1)
+    {
+        CSOAccountRecurringSubscription subscription;
+        CHECK(subscription.ParseFromString(objects->object_data(0)));
+        CHECK(subscription.time_next_cycle() > static_cast<uint32_t>(time(nullptr)) + 24 * 60 * 60);
+    }
+
+    // the game server doesn't need it
+    CHECK(!FindObjects(server, SOTypeRecurringSubscription));
+}
+
 int main()
 {
     WriteInventory();
@@ -149,6 +179,10 @@ int main()
         // the game subscribes to the cache when it connects, before it can send any requests
         CMsgSOCacheSubscribed subscription;
         inventory.BuildCacheSubscription(subscription, 40, false);
+
+        CMsgSOCacheSubscribed serverSubscription;
+        inventory.BuildCacheSubscription(serverSubscription, 40, true);
+        TestStatsSubscription(subscription, serverSubscription);
 
         TestStatTrakSwap(inventory);
         TestCoinGraffiti(inventory);

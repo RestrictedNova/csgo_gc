@@ -538,6 +538,21 @@ void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level
         accountClient.SerializeToString(object->add_object_data());
     }
 
+    // the stats page only opens with an active stats subscription, so always have one that
+    // renews 30 days from now (the page shows the days left). old builds don't know the type
+    if (!server && !m_oldProtocol)
+    {
+        const uint32_t now = static_cast<uint32_t>(time(nullptr));
+
+        CSOAccountRecurringSubscription subscription;
+        subscription.set_time_initiated(now);
+        subscription.set_time_next_cycle(now + 30 * 24 * 60 * 60);
+
+        CMsgSOCacheSubscribed_SubscribedType *object = message.add_objects();
+        object->set_type_id(SOTypeRecurringSubscription);
+        subscription.SerializeToString(object->add_object_data());
+    }
+
     {
         CMsgSOCacheSubscribed_SubscribedType *object = message.add_objects();
         object->set_type_id(SOTypeDefaultEquippedDefinitionInstanceClient);

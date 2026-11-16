@@ -71,6 +71,7 @@ enum SOTypeId : uint32_t
     SOTypePersonaDataPublic = 2,
     SOTypeEquipSlot = 3,
     SOTypeGameAccountClient = 7,
+    SOTypeRecurringSubscription = 39, // CSOAccountRecurringSubscription, from the cache type table in client.dll
     SOTypeDefaultEquippedDefinitionInstanceClient = 43
 };
 
