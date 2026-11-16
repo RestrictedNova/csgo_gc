@@ -20,7 +20,7 @@ Missing inventory features (trade ups, souvenirs, StatTrak swaps, etc.) are plan
 ## Installation
 
 - Download [CS:GO from Steam](steam://install/4465480)
-- Download the latest release for your platform from the [releases page](https://github.com/mikkokko/csgo_gc/releases/latest)
+- Download the latest release for your platform from the [releases page](https://github.com/RestrictedNova/csgo_gc/releases/latest)
 - Navigate to the game's installation directory
 - Back up your existing launcher executables as they'll be overwritten (i.e. csgo.exe, srcds.exe, csgo_linux64, etc.)
 - Extract the contents of the downloaded archive to your game directory, replace the executables when prompted
@@ -33,7 +33,7 @@ Missing inventory features (trade ups, souvenirs, StatTrak swaps, etc.) are plan
 
 The GC exposes a local WebSocket API for inventory editors. An editor can read the inventory and send changes while the game is running. Changes appear in-game immediately and are saved to inventory.txt. In-game inventory changes are also sent to the connected editor.
 
-A web-based realtime editor is available [here](https://github.com/mikkokko/csgo_invedit). The default `inventory_editor_origin` in `csgo_gc/config.txt` allows connections from its site. To use another editor, set it to the `Origin` that editor provides.
+A web-based realtime editor is available [here](https://github.com/RestrictedNova/csgo_invedit). The default `inventory_editor_origin` in `csgo_gc/config.txt` allows connections from its site. To use another editor, set it to the `Origin` that editor provides.
 
 ### Offline editing
 
