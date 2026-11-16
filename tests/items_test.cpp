@@ -46,6 +46,8 @@ enum TestItem : uint32_t
     ViewerPassPack = 12,
     SouvenirToken = 13,
     SecondViewerPass = 14,
+    StickeredRifle = 15, // sticker without a wear attribute, like souvenir stickers
+    PatchedAgent = 16,
 };
 
 static uint64_t Id(TestItem item)
@@ -75,6 +77,10 @@ static void WriteInventory()
     "12" { "inventory" "12" "def_index" "4888" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
     "13" { "inventory" "13" "def_index" "4889" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
     "14" { "inventory" "14" "def_index" "4883" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "15" { "inventory" "15" "def_index" "7" "level" "1" "quality" "12" "flags" "0" "origin" "8" "in_use" "0" "rarity" "3"
+           "attributes" { "113" "6623" } }
+    "16" { "inventory" "16" "def_index" "5036" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "5"
+           "attributes" { "113" "4609" } }
 }
 )",
         f);
@@ -412,6 +418,41 @@ static void TestTournamentData()
     }
 }
 
+static void TestStickerScraping(Inventory &inventory)
+{
+    CMsgApplySticker scrape;
+    scrape.set_item_item_id(Id(StickeredRifle));
+    scrape.set_sticker_slot(0);
+
+    // a sticker without a wear attribute is unworn: the first scrape wears it, it stays on
+    InventoryChangeMessages messages = inventory.ScrapeSticker(scrape);
+    CHECK(!messages.notification.has_request());
+    {
+        SavedInventory saved;
+        CHECK(saved.Attribute(StickeredRifle, "113") == "6623");
+        std::string_view wear = saved.Attribute(StickeredRifle, "114");
+        CHECK(!wear.empty() && FromString<float>(wear) > 0.1f && FromString<float>(wear) < 0.2f);
+    }
+
+    // it comes off once fully worn
+    int scrapes = 1;
+    while (!messages.notification.has_request() && scrapes < 20)
+    {
+        messages = inventory.ScrapeSticker(scrape);
+        scrapes++;
+    }
+
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_RemoveSticker);
+    CHECK(scrapes >= 9);
+    CHECK(SavedInventory{}.Attribute(StickeredRifle, "113").empty());
+
+    // patches come off agents in one go
+    scrape.set_item_item_id(Id(PatchedAgent));
+    messages = inventory.ScrapeSticker(scrape);
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_RemovePatch);
+    CHECK(SavedInventory{}.Attribute(PatchedAgent, "113").empty());
+}
+
 static void TestUseItem(Inventory &inventory)
 {
     ItemDefIndex used;
@@ -478,6 +519,7 @@ int main()
         TestShuffle(inventory);
         TestTournamentPasses(inventory);
         TestSouvenirRedeeming(inventory);
+        TestStickerScraping(inventory);
         TestUseItem(inventory);
     }
 

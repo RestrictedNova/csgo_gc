@@ -38,6 +38,7 @@
 			"name"	"prestige year"
 			"stored_as_integer"	"1"
 		}
+		"114" { "name" "sticker slot 0 wear" "stored_as_integer" "0" }
 		"117" { "name" "sticker slot 1 id" "stored_as_integer" "1" }
 		"121" { "name" "sticker slot 2 id" "stored_as_integer" "1" }
 		"137" { "name" "tournament event id" "stored_as_integer" "1" }

@@ -1040,16 +1040,30 @@ InventoryChangeMessages Inventory::ScrapeSticker(const CMsgApplySticker &message
     // mikkotodo randomize
     float wearIncrement = 1.0f / 9;
 
-    // increment the wear, if there was no war (patches) or it went over 1, remove the sticker/patch
-    auto wearUpdate = modify.IncrementItemAttribute(*item, attributeStickerWear, wearIncrement, 0.0f, 1.0f);
+    // patches go on agents and come off in one go, stickers wear down with each scrape and come
+    // off once fully worn. a sticker without a wear attribute (souvenir stickers, or ones added
+    // with an editor) is unworn, it used to be mistaken for a patch and removed on the first scrape
+    const bool isPatch = m_itemSchema.GetItemSlot(item->DefIndex()) == "customplayer";
+
+    AttributeIncrement wearUpdate = AttributeIncrement::NoAttribute;
+    if (!isPatch)
+    {
+        if (item->HasAttribute(attributeStickerWear))
+        {
+            wearUpdate = modify.IncrementItemAttribute(*item, attributeStickerWear, wearIncrement, 0.0f, 1.0f);
+        }
+        else
+        {
+            modify.SetItemAttribute(*item, attributeStickerWear, wearIncrement);
+            wearUpdate = AttributeIncrement::Ok;
+        }
+    }
+
     if (wearUpdate != AttributeIncrement::Ok)
     {
-        // mikkotodo fix... should this be deduced from the item???
-        EGCItemCustomizationNotification request = k_EGCItemCustomizationNotification_RemoveSticker;
-        if (wearUpdate == AttributeIncrement::NoAttribute)
-        {
-            request = k_EGCItemCustomizationNotification_RemovePatch;
-        }
+        EGCItemCustomizationNotification request = isPatch
+            ? k_EGCItemCustomizationNotification_RemovePatch
+            : k_EGCItemCustomizationNotification_RemoveSticker;
 
         if (item->GetRarity() == Rarity::Default)
         {
