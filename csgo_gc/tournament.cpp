@@ -3,70 +3,14 @@
 #include "item_schema.h"
 #include "random.h"
 
-// BLAST.tv Paris Major 2023 (event 21), the last CS:GO major. Playoff results from the
-// event's Wikipedia bracket, team ids and tags from items_game.txt. Days are right,
-// start times are approximate.
-namespace Paris2023
-{
-
-constexpr uint32_t EventId = 21;
-
-constexpr TournamentTeamInfo Vitality{ 89, "VITA", "Vitality" };
-constexpr TournamentTeamInfo GamerLegion{ 115, "GL", "GamerLegion" };
-constexpr TournamentTeamInfo Heroic{ 95, "HERO", "Heroic" };
-constexpr TournamentTeamInfo Apeks{ 117, "APEX", "Apeks" };
-constexpr TournamentTeamInfo FaZe{ 61, "FAZE", "FaZe Clan" };
-constexpr TournamentTeamInfo Monte{ 119, "MONT", "Monte" };
-constexpr TournamentTeamInfo Liquid{ 48, "LIQ", "Team Liquid" };
-constexpr TournamentTeamInfo IntoTheBreach{ 118, "ITB", "Into The Breach" };
-
-// May 18-21 2023 in UTC
-constexpr uint32_t May18 = 1684368000;
-constexpr uint32_t May19 = May18 + 86400;
-constexpr uint32_t May20 = May19 + 86400;
-constexpr uint32_t May21 = May20 + 86400;
-constexpr uint32_t Hour = 3600;
-constexpr uint32_t MapLength = 4500;
-
-// stage ids: quarterfinal maps 5-7, semifinal maps 8-10, grand final maps 11-13
-constexpr uint64_t Id(uint32_t n)
-{
-    return (static_cast<uint64_t>(EventId) << 32) | n;
-}
-
-constexpr TournamentMatch Matches[] = {
-    // quarterfinals
-    { Id(1), May18 + 13 * Hour, 5, &Heroic, &FaZe, "de_nuke", 16, 14 },
-    { Id(2), May18 + 13 * Hour + MapLength, 6, &Heroic, &FaZe, "de_overpass", 12, 16 },
-    { Id(3), May18 + 13 * Hour + 2 * MapLength, 7, &Heroic, &FaZe, "de_mirage", 16, 6 },
-    { Id(4), May18 + 17 * Hour, 5, &Vitality, &IntoTheBreach, "de_vertigo", 16, 11 },
-    { Id(5), May18 + 17 * Hour + MapLength, 6, &Vitality, &IntoTheBreach, "de_anubis", 16, 12 },
-    { Id(6), May19 + 13 * Hour, 5, &Monte, &GamerLegion, "de_mirage", 10, 16 },
-    { Id(7), May19 + 13 * Hour + MapLength, 6, &Monte, &GamerLegion, "de_overpass", 3, 16 },
-    { Id(8), May19 + 17 * Hour, 5, &Liquid, &Apeks, "de_ancient", 10, 16 },
-    { Id(9), May19 + 17 * Hour + MapLength, 6, &Liquid, &Apeks, "de_overpass", 11, 16 },
-
-    // semifinals
-    { Id(10), May20 + 13 * Hour, 8, &Heroic, &GamerLegion, "de_ancient", 16, 13 },
-    { Id(11), May20 + 13 * Hour + MapLength, 9, &Heroic, &GamerLegion, "de_inferno", 14, 16 },
-    { Id(12), May20 + 13 * Hour + 2 * MapLength, 10, &Heroic, &GamerLegion, "de_mirage", 6, 16 },
-    { Id(13), May20 + 17 * Hour, 8, &Apeks, &Vitality, "de_mirage", 14, 16 },
-    { Id(14), May20 + 17 * Hour + MapLength, 9, &Apeks, &Vitality, "de_vertigo", 12, 16 },
-
-    // grand final
-    { Id(15), May21 + 15 * Hour, 11, &GamerLegion, &Vitality, "de_overpass", 6, 16 },
-    { Id(16), May21 + 15 * Hour + MapLength, 12, &GamerLegion, &Vitality, "de_nuke", 13, 16 },
-};
-
-constexpr TournamentInfo Info{ EventId, "BLAST.tv Paris 2023 CS:GO Championship", Matches };
-
-} // namespace Paris2023
-
 const TournamentInfo *FindTournament(uint32_t eventId)
 {
-    if (eventId == Paris2023::EventId)
+    for (const TournamentInfo &tournament : AllTournaments())
     {
-        return &Paris2023::Info;
+        if (tournament.eventId == eventId)
+        {
+            return &tournament;
+        }
     }
 
     return nullptr;
@@ -161,8 +105,17 @@ void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, 
         return;
     }
 
+    // teams came with the gold team stickers at DreamHack 2014, the souvenirs of the majors
+    // before just have the event
+    const bool hasTeams = !itemSchema.FindTournamentGoldTeams(eventId).empty();
+    if (!hasTeams)
+    {
+        SetAttribute(desc, AttributeDefIndex::TournamentEventId, eventId);
+        return;
+    }
+
     // packages that weren't redeemed from a match (bought, or added with an editor) have no
-    // teams, so pick one of the event's matches on the package's map when we have them
+    // teams, so pick one of the event's matches on the package's map
     if (!team0 || !team1)
     {
         const TournamentMatch *match = RandomMatchForPackage(itemSchema, package.DefIndex(), eventId);
@@ -174,8 +127,7 @@ void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, 
         }
     }
 
-    // otherwise two of the teams that played the event. only for events whose souvenirs had team
-    // stickers (DreamHack 2014 onward), the earlier ones just have the event
+    // every package map has matches, this is for events we have no results for
     if (!team0 || !team1)
     {
         std::vector<uint32_t> teams = itemSchema.FindTournamentGoldTeams(eventId);

@@ -1,0 +1,14 @@
+{
+ "*": {"nip": 1, "astana": 2, "vg": 4, "ibp": 5, "fnatic": 6, "fnc": 6, "mystik": 7, "lgb": 9, "cphw": 10, "cw": 10, "us": 11, "na`vi": 12, "navi": 12, "n!": 13, "sk": 14, "xapso": 15, "dig": 24, "dignitas": 24, "hr": 25, "ldlc": 26, "titan": 27, "3dmax": 28, "mouz": 29, "virtus.pro": 31, "vp": 31, "vox": 32, "c9": 33, "cloud9": 33, "dat": 34, "epsilon": 35, "lc": 36, "wolf": 37, "myxmg": 38, "penta": 39, "bravado": 40, "pkd": 41, "esc": 42, "f3": 43, "envy": 46, "envyus": 46, "nv": 46, "vexed": 47, "liquid": 48, "tl": 48, "clg": 49, "keyd": 50, "renegades": 53, "rng": 53, "immunity": 54, "kinguin": 55, "ebettle": 56, "lg": 57, "luminosity": 57, "tsm": 58, "g2": 59, "g2e": 59, "astralis": 60, "faze": 61, "splyce": 62, "gambit": 63, "optic": 66, "godsent": 67, "north": 68, "big": 69, "vega": 70, "imt": 71, "sprout": 72, "ss": 73, "tyloo": 74, "avangar": 75, "qbf": 76, "misfits": 77, "flash gaming": 79, "mibr": 80, "spirit": 81, "rogue": 82, "winstrike": 83, "ence": 84, "furia": 85, "ghg": 86, "grayhound": 86, "nrg": 87, "vici": 88, "vit": 89, "vitality": 89, "forze": 90, "cr4zy": 91, "syman": 92, "dreameaters": 93, "intz": 94, "heroic": 95, "og": 96, "eg": 98, "cph flames": 101, "cphf": 101, "pain": 102, "movistar": 103, "riders": 103, "sharks esports": 104, "entropiq": 105, "ihc": 108, "outsiders": 109, "eternal fire": 110, "complexity": 111, "9z": 112, "imp": 113, "imperial esports": 113, "bne": 114, "gamerlegion": 115, "00 nation": 116, "apeks": 117, "into the breach": 118, "itb": 118, "monte": 119, "9ine": 120, "fluxo": 121, "mongolz": 122},
+ "1": {"col": 3, "recursive": 8, "reason": 16},
+ "3": {"col": 3, "reason": 30},
+ "6": {"tsm": 51, "c9": 52},
+ "7": {"c9": 52, "cloud9": 52},
+ "14": {"col": 3},
+ "15": {"col": 3},
+ "16": {"col": 3},
+ "18": {"mouz": 106},
+ "19": {"col": 111},
+ "20": {"mouz": 106},
+ "21": {"mouz": 106, "col": 111}
+}

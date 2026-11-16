@@ -12,6 +12,7 @@
 #include "econ_gcmessages.pb.h"
 #include "gcsdk_gcmessages.pb.h"
 
+#include <algorithm>
 #include <cstdio>
 
 static int s_failures;
@@ -244,11 +245,31 @@ static void TestTournamentPasses(Inventory &inventory)
     CHECK(!saved.Item(SouvenirToken) && !saved.Item(ViewerPassPack));
 }
 
+// a map of the Paris 2023 results
+static const TournamentMatch *FindParisMatch(std::string_view map, uint32_t stageId)
+{
+    const TournamentInfo *paris = FindTournament(21);
+    if (!paris)
+    {
+        return nullptr;
+    }
+
+    for (const TournamentMatch &match : paris->matches)
+    {
+        if (match.map == map && match.stageId == stageId)
+        {
+            return &match;
+        }
+    }
+
+    return nullptr;
+}
+
 static void TestSouvenirRedeeming(Inventory &inventory)
 {
     // Apeks vs Vitality on Mirage, semifinal map 1
-    const TournamentMatch *match = FindTournamentMatch(21, (21ull << 32) | 13);
-    CHECK(match && match->map == "de_mirage" && match->stageId == 8);
+    const TournamentMatch *match = FindParisMatch("de_mirage", 8);
+    CHECK(match && match->team0->id == 117 && match->team1->id == 89);
     if (!match)
     {
         return;
@@ -398,23 +419,56 @@ static void TestSouvenirOpening()
 
 static void TestTournamentData()
 {
-    const TournamentInfo *paris = FindTournament(21);
-    CHECK(paris && paris->matches.size() == 16);
-    CHECK(!FindTournament(20));
-    if (!paris)
+    // every major but the cancelled 2020 one
+    std::set<uint32_t> events;
+    for (const TournamentInfo &tournament : AllTournaments())
     {
-        return;
+        CHECK(events.insert(tournament.eventId).second);
+        CHECK(FindTournament(tournament.eventId) == &tournament);
     }
 
+    CHECK(events == std::set<uint32_t>({ 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21 }));
+    CHECK(!FindTournament(2) && !FindTournament(17));
+
     std::set<uint64_t> ids;
-    for (const TournamentMatch &match : paris->matches)
+    for (const TournamentInfo &tournament : AllTournaments())
     {
-        CHECK(ids.insert(match.matchId).second);
-        CHECK(match.team0->id && match.team1->id && match.team0 != match.team1);
-        CHECK(std::max(match.score0, match.score1) == 16 && match.score0 != match.score1);
-        CHECK(match.stageId >= 5 && match.stageId <= 13);
-        CHECK(match.map.starts_with("de_"));
-        CHECK(FindTournamentMatch(21, match.matchId) == &match);
+        uint32_t lastTime = 0;
+        for (const TournamentMatch &match : tournament.matches)
+        {
+            CHECK(ids.insert(match.matchId).second);
+            CHECK(match.matchId >> 32 == tournament.eventId);
+            CHECK(match.team0->id && match.team1->id && match.team0 != match.team1);
+            CHECK(match.team0->tag.size() && match.team0->name.size() && match.team1->tag.size() && match.team1->name.size());
+            CHECK(std::max(match.score0, match.score1) >= 16 && match.score0 != match.score1);
+            CHECK(match.stageId >= 2 && match.stageId <= 48);
+            CHECK(match.map.starts_with("de_"));
+            CHECK(match.time >= lastTime);
+            CHECK(FindTournamentMatch(tournament.eventId, match.matchId) == &match);
+            lastTime = match.time;
+        }
+    }
+
+    // paris: the challengers and legends stages, then the 16 maps of the champions stage
+    const TournamentInfo *paris = FindTournament(21);
+    CHECK(paris && paris->matches.size() == 118);
+    if (paris)
+    {
+        CHECK(std::ranges::count_if(paris->matches, [](const TournamentMatch &match)
+            { return match.stageId >= 5 && match.stageId <= 13; }) == 16);
+
+        // the grand final's last map, Vitality's win on Nuke
+        const TournamentMatch &last = paris->matches.back();
+        CHECK(last.stageId == 12 && last.map == "de_nuke" && last.team1->id == 89 && last.score1 == 16);
+    }
+
+    // columbus 2016's nuke packages dropped in the all-star showmatch, its only game on nuke
+    const TournamentInfo *columbus = FindTournament(9);
+    CHECK(columbus);
+    if (columbus)
+    {
+        auto nuke = std::ranges::find(columbus->matches, std::string_view{ "de_nuke" }, &TournamentMatch::map);
+        CHECK(nuke != columbus->matches.end() && nuke->stageId == 14 && nuke->team0->id == 64 && nuke->team1->id == 65);
     }
 }
 

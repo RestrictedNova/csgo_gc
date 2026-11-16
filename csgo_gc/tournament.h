@@ -6,8 +6,8 @@
 
 class ItemSchema;
 
-// Major results we can show in Watch -> Tournament, which is where the client
-// redeems souvenir packages from. Each map played is a match of its own.
+// Major results we show in Watch -> Tournaments, which is where the client redeems souvenir
+// packages from, and that souvenirs get their match from. Each map played is a match of its own.
 
 struct TournamentTeamInfo
 {
@@ -35,6 +35,9 @@ struct TournamentInfo
     std::span<const TournamentMatch> matches;
 };
 
+// every major's results, generated into tournament_data.cpp by tools/tournaments
+std::span<const TournamentInfo> AllTournaments();
+
 // nullptr if we have no match data for the event
 const TournamentInfo *FindTournament(uint32_t eventId);
 const TournamentMatch *FindTournamentMatch(uint32_t eventId, uint64_t matchId);
@@ -43,7 +46,7 @@ const TournamentMatch *FindTournamentMatch(uint32_t eventId, uint64_t matchId);
 const TournamentMatch *RandomMatchForPackage(const ItemSchema &itemSchema, ItemDefIndex packageDefIndex, uint32_t eventId);
 
 // turns the item rolled from a souvenir package into a souvenir like the real ones: tournament
-// quality, no StatTrak, the package's event, stage and teams (a match on its map, or two of the
-// event's teams, when the package wasn't redeemed from one), and that event's gold stickers:
-// both teams and the organiser since DreamHack 2014, the round MVP's autograph since Cologne 2015
+// quality, no StatTrak, the package's event, and since DreamHack 2014 its stage and teams (a
+// match on its map when the package wasn't redeemed from one) with that event's gold stickers:
+// both teams and the organiser, plus the round MVP's autograph since Cologne 2015
 void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, ItemDesc &desc);

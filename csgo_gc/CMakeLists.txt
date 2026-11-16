@@ -52,6 +52,7 @@ add_library(csgo_gc STATIC
     steamuserstatsproxy.cpp
     steamutilsproxy.cpp
     tournament.cpp
+    tournament_data.cpp
     ui_patches.cpp)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
