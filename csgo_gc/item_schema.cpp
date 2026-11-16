@@ -123,10 +123,6 @@ StickerKitInfo::StickerKitInfo(const KeyValue &key)
     , m_tournamentTeamId{ key.GetNumber<uint32_t>("tournament_team_id") }
     , m_tournamentPlayerId{ key.GetNumber<uint32_t>("tournament_player_id") }
     , m_gold{ key.GetString("name").ends_with("_gold") }
-    , m_plain{ !m_gold
-          && !key.GetString("name").ends_with("_holo")
-          && !key.GetString("name").ends_with("_foil")
-          && !key.GetString("name").ends_with("_glitter") }
 {
     std::string_view rarity = key.GetString("item_rarity");
     if (rarity.size())
@@ -697,39 +693,33 @@ bool ItemSchema::IsSouvenirPackage(ItemDefIndex defIndex) const
     return it != m_itemInfo.end() && it->second.m_containerType == "souvenir_case";
 }
 
-std::optional<uint32_t> ItemSchema::FindTournamentTeamSticker(uint32_t eventId, uint32_t teamId) const
+std::optional<uint32_t> ItemSchema::FindTournamentGoldSticker(uint32_t eventId, uint32_t teamId) const
 {
-    // lowest index of each kind, the map is unordered and some teams have more than one
-    std::optional<uint32_t> gold;
-    std::optional<uint32_t> plain;
+    // lowest index, the map is unordered and a few teams have more than one
+    std::optional<uint32_t> result;
 
     for (const auto &[name, kit] : m_stickerKitInfo)
     {
-        if (kit.m_tournamentEventId != eventId || kit.m_tournamentTeamId != teamId || kit.m_tournamentPlayerId)
+        if (kit.m_gold
+            && kit.m_tournamentEventId == eventId
+            && kit.m_tournamentTeamId == teamId
+            && !kit.m_tournamentPlayerId
+            && (!result || kit.m_defIndex < *result))
         {
-            continue;
-        }
-
-        if (kit.m_gold && (!gold || kit.m_defIndex < *gold))
-        {
-            gold = kit.m_defIndex;
-        }
-        else if (kit.m_plain && (!plain || kit.m_defIndex < *plain))
-        {
-            plain = kit.m_defIndex;
+            result = kit.m_defIndex;
         }
     }
 
-    return gold ? gold : plain;
+    return result;
 }
 
-std::vector<uint32_t> ItemSchema::FindTournamentTeams(uint32_t eventId) const
+std::vector<uint32_t> ItemSchema::FindTournamentGoldTeams(uint32_t eventId) const
 {
     std::vector<uint32_t> teams;
 
     for (const auto &[name, kit] : m_stickerKitInfo)
     {
-        if (kit.m_tournamentEventId == eventId && kit.m_tournamentTeamId && !kit.m_tournamentPlayerId)
+        if (kit.m_gold && kit.m_tournamentEventId == eventId && kit.m_tournamentTeamId && !kit.m_tournamentPlayerId)
         {
             teams.push_back(kit.m_tournamentTeamId);
         }
@@ -738,6 +728,30 @@ std::vector<uint32_t> ItemSchema::FindTournamentTeams(uint32_t eventId) const
     std::sort(teams.begin(), teams.end());
     teams.erase(std::unique(teams.begin(), teams.end()), teams.end());
     return teams;
+}
+
+std::vector<ItemSchema::Autograph> ItemSchema::FindTournamentGoldAutographs(uint32_t eventId, uint32_t teamId) const
+{
+    std::vector<Autograph> autographs;
+
+    for (const auto &[name, kit] : m_stickerKitInfo)
+    {
+        if (kit.m_gold
+            && kit.m_tournamentEventId == eventId
+            && kit.m_tournamentTeamId == teamId
+            && kit.m_tournamentPlayerId)
+        {
+            autographs.push_back({ kit.m_defIndex, kit.m_tournamentPlayerId });
+        }
+    }
+
+    // stable order regardless of the map's
+    std::sort(autographs.begin(), autographs.end(), [](const Autograph &a, const Autograph &b)
+        {
+            return a.stickerKit < b.stickerKit;
+        });
+
+    return autographs;
 }
 
 std::vector<ItemDefIndex> ItemSchema::FindItemsByNamePrefix(std::string_view prefix) const

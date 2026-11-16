@@ -329,10 +329,15 @@ static void TestSouvenirOpening()
     CHECK(value(AttributeDefIndex::TournamentEventTeam0Id) == 117u);
     CHECK(value(AttributeDefIndex::TournamentEventTeam1Id) == 89u);
 
-    // gold team stickers, then the organiser; not the regular sticker or the autograph
+    // gold team stickers, then the organiser; not the regular team sticker
     CHECK(value(AttributeDefIndex::StickerId0) == 6667u);
     CHECK(value(AttributeDefIndex::StickerId1) == 6623u);
     CHECK(value(AttributeDefIndex::StickerId2) == 6707u);
+
+    // then the gold autograph of a player from either team as the MVP, never the regular autograph
+    const std::optional<uint32_t> autograph = value(AttributeDefIndex::StickerId3);
+    const std::optional<uint32_t> mvp = value(AttributeDefIndex::TournamentMvpAccountId);
+    CHECK((autograph == 6800u && mvp == 153400465u) || (autograph == 6901u && mvp == 11111u));
 
     // a package that wasn't redeemed from a match (bought or added with an editor)
     // gets the teams of one of the event's matches on its map (Mirage)
@@ -366,8 +371,8 @@ static void TestSouvenirOpening()
 
     CHECK(hasOrganiser);
 
-    // a package from an early major: no match data and no gold stickers, so two of the
-    // event's teams and its regular stickers (not the holo ones)
+    // a package from an early major: real souvenirs from those had no stickers (the event has no
+    // gold ones), so only the event, no made up teams and none of its regular or holo stickers
     ItemDesc oldDesc{};
     oldDesc.defIndex = ToEnum<ItemDefIndex>(4200);
     oldDesc.quality = Quality::Unique;
@@ -378,12 +383,11 @@ static void TestSouvenirOpening()
     skin.quality = Quality::Unique;
     ApplySouvenirAttributes(schema, old, skin);
 
+    CHECK(skin.quality == Quality::Tournament);
     CHECK(value(AttributeDefIndex::TournamentEventId) == 4u);
-    const std::set<std::optional<uint32_t>> oldTeams{ value(AttributeDefIndex::TournamentEventTeam0Id), value(AttributeDefIndex::TournamentEventTeam1Id) };
-    CHECK(oldTeams == (std::set<std::optional<uint32_t>>{ 1u, 2u }));
-    const std::set<std::optional<uint32_t>> oldStickers{ value(AttributeDefIndex::StickerId0), value(AttributeDefIndex::StickerId1) };
-    CHECK(oldStickers == (std::set<std::optional<uint32_t>>{ 5001u, 5003u }));
-    CHECK(value(AttributeDefIndex::StickerId2) == 5004u);
+    CHECK(!value(AttributeDefIndex::TournamentEventTeam0Id) && !value(AttributeDefIndex::TournamentEventTeam1Id));
+    CHECK(!value(AttributeDefIndex::StickerId0) && !value(AttributeDefIndex::StickerId1));
+    CHECK(!value(AttributeDefIndex::StickerId2) && !value(AttributeDefIndex::StickerId3));
 }
 
 static void TestTournamentData()

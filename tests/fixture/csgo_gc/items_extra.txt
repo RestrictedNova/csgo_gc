@@ -67,6 +67,8 @@
 		"6667" { "name" "paris2023_team_apex_gold" "tournament_event_id" "21" "tournament_team_id" "117" }
 		"6707" { "name" "paris2023_team_blst_gold" "tournament_event_id" "21" "tournament_team_id" "0" }
 		"6800" { "name" "paris2023_signature_zywoo_gold" "tournament_event_id" "21" "tournament_team_id" "89" "tournament_player_id" "153400465" }
+		"6901" { "name" "paris2023_signature_jl_gold" "tournament_event_id" "21" "tournament_team_id" "117" "tournament_player_id" "11111" }
+		"6902" { "name" "paris2023_signature_jl" "tournament_event_id" "21" "tournament_team_id" "117" "tournament_player_id" "11111" }
 
 		// an early major without gold stickers and without match data
 		"5001" { "name" "cologne2014_team_a" "tournament_event_id" "4" "tournament_team_id" "1" }

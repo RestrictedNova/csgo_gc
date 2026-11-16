@@ -67,7 +67,6 @@ public:
     uint32_t m_tournamentTeamId;
     uint32_t m_tournamentPlayerId;
     bool m_gold; // name ends with _gold
-    bool m_plain; // not gold, holo, foil or glitter
 };
 
 class MusicDefinitionInfo
@@ -178,12 +177,21 @@ public:
 
     bool IsSouvenirPackage(ItemDefIndex defIndex) const;
 
-    // the sticker a souvenir from an event gets for a team (team 0 is the organiser), as a sticker kit
-    // index: the gold one, or the regular one for the first majors which had no gold stickers
-    std::optional<uint32_t> FindTournamentTeamSticker(uint32_t eventId, uint32_t teamId) const;
+    // the gold sticker of a team at an event (team 0 is the organiser), as a sticker kit index.
+    // souvenirs have these since DreamHack 2014, the majors before it had none
+    std::optional<uint32_t> FindTournamentGoldSticker(uint32_t eventId, uint32_t teamId) const;
 
-    // teams that have stickers at an event (not the organiser), sorted
-    std::vector<uint32_t> FindTournamentTeams(uint32_t eventId) const;
+    // teams with a gold sticker at an event (not the organiser), sorted
+    std::vector<uint32_t> FindTournamentGoldTeams(uint32_t eventId) const;
+
+    struct Autograph
+    {
+        uint32_t stickerKit;
+        uint32_t playerAccountId;
+    };
+
+    // gold autographs of a team's players at an event (souvenirs have these since Cologne 2015)
+    std::vector<Autograph> FindTournamentGoldAutographs(uint32_t eventId, uint32_t teamId) const;
 
 private:
     void ParseItems(const KeyValue *itemsKey, const KeyValue *prefabsKey);

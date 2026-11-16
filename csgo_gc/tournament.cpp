@@ -174,10 +174,11 @@ void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, 
         }
     }
 
-    // otherwise two of the teams that played the event
+    // otherwise two of the teams that played the event. only for events whose souvenirs had team
+    // stickers (DreamHack 2014 onward), the earlier ones just have the event
     if (!team0 || !team1)
     {
-        std::vector<uint32_t> teams = itemSchema.FindTournamentTeams(eventId);
+        std::vector<uint32_t> teams = itemSchema.FindTournamentGoldTeams(eventId);
         if (teams.size() >= 2)
         {
             team0 = Random::Select(teams);
@@ -193,13 +194,13 @@ void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, 
         SetAttribute(desc, AttributeDefIndex::TournamentEventStageId, stageId);
     }
 
-    // the event's stickers: both teams, then the organiser (team 0). gold since DreamHack 2014,
-    // regular ones for the earlier events. real souvenirs from later majors also had the
-    // match MVP's autograph, which we don't have data for
+    // gold stickers like the real ones: both teams and the organiser since DreamHack 2014, plus
+    // the autograph of the round's MVP since Cologne 2015. the majors before had none
     constexpr AttributeDefIndex StickerSlots[] = {
         AttributeDefIndex::StickerId0,
         AttributeDefIndex::StickerId1,
         AttributeDefIndex::StickerId2,
+        AttributeDefIndex::StickerId3,
     };
 
     size_t slot = 0;
@@ -211,13 +212,26 @@ void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, 
         }
     };
 
-    if (team0 && team1)
+    if (!team0 || !team1)
     {
-        SetAttribute(desc, AttributeDefIndex::TournamentEventTeam0Id, team0);
-        SetAttribute(desc, AttributeDefIndex::TournamentEventTeam1Id, team1);
-        addSticker(itemSchema.FindTournamentTeamSticker(eventId, team0));
-        addSticker(itemSchema.FindTournamentTeamSticker(eventId, team1));
+        return;
     }
 
-    addSticker(itemSchema.FindTournamentTeamSticker(eventId, 0));
+    SetAttribute(desc, AttributeDefIndex::TournamentEventTeam0Id, team0);
+    SetAttribute(desc, AttributeDefIndex::TournamentEventTeam1Id, team1);
+    addSticker(itemSchema.FindTournamentGoldSticker(eventId, team0));
+    addSticker(itemSchema.FindTournamentGoldSticker(eventId, team1));
+    addSticker(itemSchema.FindTournamentGoldSticker(eventId, 0));
+
+    // the MVP was whoever was the round's MVP when the package dropped, so any of the ten players
+    std::vector<ItemSchema::Autograph> players = itemSchema.FindTournamentGoldAutographs(eventId, team0);
+    std::vector<ItemSchema::Autograph> players1 = itemSchema.FindTournamentGoldAutographs(eventId, team1);
+    players.insert(players.end(), players1.begin(), players1.end());
+
+    if (players.size())
+    {
+        const ItemSchema::Autograph &mvp = Random::Select(players);
+        addSticker(mvp.stickerKit);
+        SetAttribute(desc, AttributeDefIndex::TournamentMvpAccountId, mvp.playerAccountId);
+    }
 }
