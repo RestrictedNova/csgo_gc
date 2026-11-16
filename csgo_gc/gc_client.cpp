@@ -168,8 +168,8 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             ModifyItemAttribute(messageRead);
             break;
 
-        case k_EMsgGCCStrike15_ClientDeepStats:
-            ClientDeepStats(messageRead);
+        case k_EMsgGCRecurringSubscriptionStatus:
+            RecurringSubscriptionStatus();
             break;
 
         default:
@@ -632,22 +632,24 @@ void ClientGC::ModifyItemAttribute(GCMessageRead &messageRead)
     SendInventoryChangeMessages(messages);
 }
 
-void ClientGC::ClientDeepStats(GCMessageRead &messageRead)
+// k_EMsgGCCStrike15_ClientDeepStats is deliberately left unanswered. The stats page keeps asking for
+// the match list overview (no account id, no range) until the client has at least one match from it,
+// and answering with nothing makes it ask again every frame. Without an answer it times out instead.
+// Making the page work needs a made up match history.
+
+void ClientGC::RecurringSubscriptionStatus()
 {
-    CMsgGCCStrike15_ClientDeepStats request;
-    if (!messageRead.ReadProtobuf(request))
-    {
-        Platform::Print("Parsing CMsgGCCStrike15_ClientDeepStats failed, ignoring\n");
-        return;
-    }
+    // the client asks whether its stats subscription renews. without an answer it keeps asking and
+    // the stats page waits. a nonzero agreement means enrolled, active means it renews automatically
+    // (matches the CSOAccountRecurringSubscription in the cache, see Inventory::BuildCacheSubscription)
+    CMsgGCHRecurringSubscriptionStatusChange response;
+    response.set_steamid(m_steamId);
+    response.set_appid(730);
+    response.set_agreementid(1);
+    response.set_active(true);
 
-    // there's no match history to report, but answering with an empty range
-    // lets the stats page load instead of timing out with a connection error
-    CMsgGCCStrike15_ClientDeepStats response;
-    response.set_account_id(request.has_account_id() ? request.account_id() : AccountId());
-    *response.mutable_range() = request.range();
-
-    SendMessageToGame(false, k_EMsgGCCStrike15_ClientDeepStats, response);
+    SendMessageToGame(false, k_EGCMsgRecurringSubscriptionStatusChange, response);
+    Platform::Print("Answered stats subscription status: renews automatically\n");
 }
 
 static void AddressString(uint32_t ip, uint32_t port, char *buffer, size_t bufferSize)

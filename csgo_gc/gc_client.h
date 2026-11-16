@@ -60,7 +60,7 @@ private:
     void RequestPrestigeCoin(GCMessageRead &messageRead);
     void StatTrakSwap(GCMessageRead &messageRead);
     void ModifyItemAttribute(GCMessageRead &messageRead);
-    void ClientDeepStats(GCMessageRead &messageRead);
+    void RecurringSubscriptionStatus();
 
     void CraftItem(GCMessageRead &messageRead);
     void DeleteItem(GCMessageRead &messageRead);
