@@ -125,7 +125,7 @@ static void SerializeItem(MessageWrite &message, const EditorItem &item)
         // illegible bullshit
         std::string value = std::visit(Bruh{
                                            [&](float v)
-                                           { return std::to_string(v); },
+                                           { return FloatToString(v); },
                                            [&](uint32_t v)
                                            { return std::to_string(v); },
                                            [&](const std::string &v)

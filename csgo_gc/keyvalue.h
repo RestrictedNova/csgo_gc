@@ -50,6 +50,16 @@ inline bool FromString(std::string_view string)
     return FromString<int>(string) ? true : false;
 }
 
+// shortest text that parses back to exactly the same float. std::to_string
+// rounds to 6 decimals, which throws away most of a low paint wear
+inline std::string FloatToString(float value)
+{
+    char buffer[32];
+    std::to_chars_result result = std::to_chars(buffer, buffer + sizeof(buffer), value);
+    assert(result.ec == std::errc{});
+    return std::string{ buffer, result.ptr };
+}
+
 class KeyValue
 {
 public:
