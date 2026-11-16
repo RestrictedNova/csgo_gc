@@ -58,6 +58,7 @@ enum class AttributeDefIndex : uint32_t
     TextureWear = 8,
     SupplyCrateSeries = 68,
     AlternateIcon = 70,
+    UpgradeThreshold = 73,
     KillEater = 80,
     KillEaterScoreType = 81,
 
@@ -89,13 +90,27 @@ enum class AttributeDefIndex : uint32_t
     StickerScale5 = 135,
     StickerRotation5 = 136,
 
+    TournamentEventId = 137,
+    TournamentEventStageId = 138,
+    TournamentEventTeam0Id = 139,
+    TournamentEventTeam1Id = 140,
+
     MusicId = 166,
     QuestId = 168,
 
+    CampaignCompletionBitfield = 185, // tournament coin challenges, bit n set when challenge n + 1 is done
+
     PrestigeYear = 221,
+    TournamentMvpAccountId = 223,
 
     SpraysRemaining = 232,
     SprayTintId = 233,
+
+    // tournament coins: souvenir packages that can be redeemed are
+    // "upgrade level" + "operation drops awarded 1" - "operation drops awarded 0"
+    OperationDropsAwarded1 = 237, // souvenir tokens added
+    OperationDropsAwarded0 = 240, // souvenir packages redeemed
+    UpgradeLevel = 268,
 
     CasketItemsCount = 270,
     CasketModificationDate = 271,

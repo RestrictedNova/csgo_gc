@@ -785,6 +785,11 @@ InventoryChangeMessages Inventory::UseItem(uint64_t itemId, ItemDefIndex &usedDe
         return FinishChanges(modify);
     }
 
+    if (IsTournamentPass(usedDefIndex))
+    {
+        return UseTournamentPass(*item);
+    }
+
     if (usedDefIndex != ItemDefIndex::Spray)
     {
         Platform::Print("Using item {} (def index {}) is not supported\n", itemId, FromEnum(usedDefIndex));

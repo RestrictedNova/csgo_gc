@@ -116,6 +116,12 @@ private:
 
     // the loadout slot an item of this definition goes into for a class, if it can be worked out
     std::optional<uint32_t> FindLoadoutSlot(uint32_t classId, uint32_t defIndex) const;
+
+    // tournament viewer passes, packs and souvenir tokens (inventory_tournament.cpp)
+    bool IsTournamentPass(ItemDefIndex defIndex) const;
+    InventoryChangeMessages UseTournamentPass(Item &pass);
+    std::vector<ItemDefIndex> TournamentCoinTiers(uint32_t eventId) const;
+    Item *FindTournamentCoin(const std::vector<ItemDefIndex> &tiers);
     bool UnequipItem(InventoryModify &modify, uint64_t itemId);
     void UnequipItem(InventoryModify &modify, uint32_t classId, uint32_t slotId);
 

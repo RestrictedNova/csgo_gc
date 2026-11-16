@@ -38,6 +38,11 @@
 			"name"	"prestige year"
 			"stored_as_integer"	"1"
 		}
+		"137" { "name" "tournament event id" "stored_as_integer" "1" }
+		"185" { "name" "campaign completion bitfield" "stored_as_integer" "1" }
+		"237" { "name" "operation drops awarded 1" "stored_as_integer" "1" }
+		"240" { "name" "operation drops awarded 0" "stored_as_integer" "1" }
+		"268" { "name" "upgrade level" "stored_as_integer" "1" }
 	}
 
 	// loadout categories, inherited by the items below like in the real schema
@@ -55,6 +60,23 @@
 		"60" { "name" "weapon_m4a1_silencer" "prefab" "rifle" }
 		"5036" { "name" "customplayer_ctm_fbi" "prefab" "customplayer" }
 		"1314" { "name" "musickit" "prefab" "musickit_prefab" }
+
+		// a tournament: viewer pass, pass with tokens, souvenir token and two coin tiers (listed out of order)
+		"4883" { "name" "tournament_pass_paris2023" "attributes" { "tournament event id" "21" } }
+		"4888" { "name" "tournament_pass_paris2023_pack" "attributes" { "tournament event id" "21" } }
+		"4889" { "name" "tournament_pass_paris2023_charge" "attributes" { "tournament event id" "21" } }
+		"4885" { "name" "tournament_journal_paris2023_silver" "attributes" { "tournament event id" "21" "upgrade level" "1" } }
+		"4884"
+		{
+			"name" "tournament_journal_paris2023"
+			"attributes"
+			{
+				"tournament event id" "21"
+				"upgrade level" "0"
+				"sticker slot 0 id" "6732"
+				"campaign completion bitfield" "1"
+			}
+		}
 
 		// service medals, shaped like the real ones (fewer tiers)
 		"4820"

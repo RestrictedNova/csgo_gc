@@ -664,6 +664,39 @@ std::string_view ItemSchema::GetItemSlot(ItemDefIndex defIndex) const
     return it != m_itemInfo.end() ? std::string_view{ it->second.m_itemSlot } : std::string_view{};
 }
 
+std::string_view ItemSchema::GetItemName(ItemDefIndex defIndex) const
+{
+    auto it = m_itemInfo.find(defIndex);
+    return it != m_itemInfo.end() ? std::string_view{ it->second.m_name } : std::string_view{};
+}
+
+std::optional<uint32_t> ItemSchema::GetItemAttributeUint32(ItemDefIndex defIndex, AttributeDefIndex attributeDefIndex) const
+{
+    auto it = m_itemInfo.find(defIndex);
+    if (it == m_itemInfo.end())
+    {
+        return std::nullopt;
+    }
+
+    const ItemAttributeInfo *attribute = GetAttributeInfo(it->second, attributeDefIndex);
+    const uint32_t *value = attribute ? std::get_if<uint32_t>(&attribute->value) : nullptr;
+    return value ? std::optional<uint32_t>{ *value } : std::nullopt;
+}
+
+std::vector<ItemDefIndex> ItemSchema::FindItemsByNamePrefix(std::string_view prefix) const
+{
+    std::vector<ItemDefIndex> result;
+    for (const auto &[defIndex, info] : m_itemInfo)
+    {
+        if (info.m_name.starts_with(prefix))
+        {
+            result.push_back(defIndex);
+        }
+    }
+
+    return result;
+}
+
 // i hate my life
 static std::vector<std::string_view> SplitString(std::string_view input, char delimiter)
 {

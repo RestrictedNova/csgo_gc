@@ -40,6 +40,10 @@ enum TestItem : uint32_t
     M4A1S = 8,
     Agent = 9,
     MusicKit = 10,
+    ViewerPass = 11,
+    ViewerPassPack = 12,
+    SouvenirToken = 13,
+    SecondViewerPass = 14,
 };
 
 static uint64_t Id(TestItem item)
@@ -65,6 +69,10 @@ static void WriteInventory()
     "8" { "inventory" "8" "def_index" "60" "level" "1" "quality" "4" "flags" "0" "origin" "8" "in_use" "0" "rarity" "3" }
     "9" { "inventory" "9" "def_index" "5036" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "5" }
     "10" { "inventory" "10" "def_index" "1314" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "3" }
+    "11" { "inventory" "11" "def_index" "4883" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "12" { "inventory" "12" "def_index" "4888" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "13" { "inventory" "13" "def_index" "4889" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "14" { "inventory" "14" "def_index" "4883" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
 }
 )",
         f);
@@ -90,6 +98,31 @@ struct SavedInventory
         const KeyValue *saved = Item(item);
         const KeyValue *attributes = saved ? saved->GetSubkey("attributes") : nullptr;
         return attributes ? attributes->GetString(defIndex) : std::string_view{};
+    }
+
+    // the first saved item with this def index, and its attribute values
+    const KeyValue *ItemWithDef(std::string_view defIndex) const
+    {
+        const KeyValue *items = read.Root().GetSubkey("items");
+        if (items)
+        {
+            for (const KeyValue &item : items->Subkeys())
+            {
+                if (item.GetString("def_index") == defIndex)
+                {
+                    return &item;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    std::string_view AttributeOfDef(std::string_view defIndex, std::string_view attribute) const
+    {
+        const KeyValue *saved = ItemWithDef(defIndex);
+        const KeyValue *attributes = saved ? saved->GetSubkey("attributes") : nullptr;
+        return attributes ? attributes->GetString(attribute) : std::string_view{};
     }
 
     // the slot an item is equipped in for a class, empty if it isn't
@@ -159,6 +192,50 @@ static void TestShuffle(Inventory &inventory)
     CHECK(saved.EquippedSlot(PlainRifle, "3").empty());
 }
 
+static void TestTournamentPasses(Inventory &inventory)
+{
+    ItemDefIndex used;
+
+    // a souvenir token needs an activated coin
+    InventoryChangeMessages messages = inventory.UseItem(Id(SouvenirToken), used);
+    CHECK(!messages.notification.has_request());
+    CHECK(SavedInventory{}.Item(SouvenirToken));
+
+    // the viewer pass creates the lowest tier coin and the client gets its id
+    messages = inventory.UseItem(Id(ViewerPass), used);
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_ActivateFanToken);
+    CHECK(messages.client.created.size() == 1);
+    {
+        SavedInventory saved;
+        const KeyValue *coin = saved.ItemWithDef("4884");
+        CHECK(coin);
+        CHECK(!saved.Item(ViewerPass));
+        CHECK(saved.AttributeOfDef("4884", "237") == "0");
+        CHECK(saved.AttributeOfDef("4884", "240") == "0");
+        CHECK(saved.AttributeOfDef("4884", "185") == "1");
+        CHECK(saved.AttributeOfDef("4884", "113") == "6732");
+        if (coin && messages.notification.item_id_size() == 1)
+        {
+            CHECK(messages.notification.item_id(0) == ComposeItemId(AccountId, FromString<uint32_t>(coin->Name())));
+        }
+    }
+
+    // a second viewer pass for the same event is refused
+    messages = inventory.UseItem(Id(SecondViewerPass), used);
+    CHECK(!messages.notification.has_request());
+
+    // tokens add to the coin, one each or three from a pack
+    messages = inventory.UseItem(Id(SouvenirToken), used);
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_ActivateFanToken);
+    CHECK(SavedInventory{}.AttributeOfDef("4884", "237") == "1");
+
+    messages = inventory.UseItem(Id(ViewerPassPack), used);
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_ActivateFanToken);
+    SavedInventory saved;
+    CHECK(saved.AttributeOfDef("4884", "237") == "4");
+    CHECK(!saved.Item(SouvenirToken) && !saved.Item(ViewerPassPack));
+}
+
 static void TestUseItem(Inventory &inventory)
 {
     ItemDefIndex used;
@@ -223,6 +300,7 @@ int main()
         TestStatTrakSwap(inventory);
         TestCoinGraffiti(inventory);
         TestShuffle(inventory);
+        TestTournamentPasses(inventory);
         TestUseItem(inventory);
     }
 

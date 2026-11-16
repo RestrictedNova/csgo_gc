@@ -33,6 +33,7 @@ add_library(csgo_gc STATIC
     inventory.cpp
     inventory_editor.cpp
     inventory_modify.cpp
+    inventory_tournament.cpp
     item.cpp
     item_schema.cpp
     keyvalue.cpp

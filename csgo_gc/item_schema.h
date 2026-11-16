@@ -159,6 +159,15 @@ public:
     // the loadout category ("item_slot") of an item definition, empty if unknown
     std::string_view GetItemSlot(ItemDefIndex defIndex) const;
 
+    // an item definition's internal name ("tournament_pass_paris2023"), empty if unknown
+    std::string_view GetItemName(ItemDefIndex defIndex) const;
+
+    // the value of an integer attribute set on an item definition (or its prefabs)
+    std::optional<uint32_t> GetItemAttributeUint32(ItemDefIndex defIndex, AttributeDefIndex attributeDefIndex) const;
+
+    // all item definitions whose internal name starts with prefix
+    std::vector<ItemDefIndex> FindItemsByNamePrefix(std::string_view prefix) const;
+
 private:
     void ParseItems(const KeyValue *itemsKey, const KeyValue *prefabsKey);
     void BuildPrestigeCoins();
