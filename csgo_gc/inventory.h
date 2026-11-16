@@ -55,6 +55,17 @@ public:
     InventoryChangeMessages SetItemPositions(const CMsgSetItemPositions &message, std::vector<CMsgItemAcknowledged> &acknowledgements);
     InventoryChangeMessages PurchaseItems(const std::vector<uint32_t> &defIndexes, std::vector<uint64_t> &itemIds);
 
+    // service medals: the newest year's medal the player can claim next. upgradeItemId is the
+    // medal it replaces, or 0 if they have none from that year. returns false if there are none
+    bool GetPrestigeCoinOffer(ItemDefIndex &defIndex, uint64_t &upgradeItemId);
+
+    // grants or upgrades the medal from GetPrestigeCoinOffer. coinItemId is 0 if defIndex
+    // doesn't match the offer, otherwise it's the medal's item id
+    InventoryChangeMessages ClaimPrestigeCoin(ItemDefIndex defIndex, uint64_t &coinItemId);
+
+    // tells the client and game server about a new player level
+    InventoryChangeMessages UpdatePlayerLevel(int level);
+
     // FIXME: unfuck this!!!
     void ResetGameServerCache()
     {

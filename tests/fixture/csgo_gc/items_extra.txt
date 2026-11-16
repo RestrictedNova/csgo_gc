@@ -23,5 +23,40 @@
 			"name"	"custom name attr"
 			"attribute_type"	"string"
 		}
+		"221"
+		{
+			"name"	"prestige year"
+			"stored_as_integer"	"1"
+		}
+	}
+
+	// service medals, shaped like the real ones (fewer tiers)
+	"items"
+	{
+		"4820"
+		{
+			"name"	"prestige coin 2022 level 2"
+			"attributes" { "prestige year" "2022" }
+		}
+		"4819"
+		{
+			"name"	"prestige coin 2022"
+			"attributes" { "prestige year" "2022" }
+		}
+		"4874"
+		{
+			"name"	"prestige coin 2023 level 2"
+			"attributes" { "prestige year" "2023" }
+		}
+		"4873"
+		{
+			"name"	"prestige coin 2023"
+			"attributes" { "prestige year" "2023" }
+		}
+		"4875"
+		{
+			"name"	"prestige coin 2023 level 3"
+			"attributes" { "prestige year" "2023" }
+		}
 	}
 }

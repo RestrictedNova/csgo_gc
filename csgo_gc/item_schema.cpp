@@ -179,6 +179,7 @@ ItemSchema::ItemSchema()
     if (itemsKey)
     {
         ParseItems(itemsKey, itemsGame->GetSubkey("prefabs"));
+        BuildPrestigeCoins();
     }
 
     // FIXME: abysmal dogshit
@@ -624,6 +625,37 @@ void ItemSchema::ParseItems(const KeyValue *itemsKey, const KeyValue *prefabsKey
             assert(itemInfo.m_lootListName.size());
         }
     }
+}
+
+// each service medal tier is its own item definition sharing a "prestige year"
+// attribute, and the tiers of a year have ascending def indexes
+void ItemSchema::BuildPrestigeCoins()
+{
+    for (const auto &[defIndex, info] : m_itemInfo)
+    {
+        const ItemAttributeInfo *attribute = GetAttributeInfo(info, AttributeDefIndex::PrestigeYear);
+        const uint32_t *year = attribute ? std::get_if<uint32_t>(&attribute->value) : nullptr;
+        if (year && *year)
+        {
+            m_prestigeCoins[*year].push_back(defIndex);
+        }
+    }
+
+    for (auto &[year, coins] : m_prestigeCoins)
+    {
+        std::sort(coins.begin(), coins.end());
+    }
+}
+
+uint32_t ItemSchema::LatestPrestigeYear() const
+{
+    return m_prestigeCoins.empty() ? 0 : m_prestigeCoins.rbegin()->first;
+}
+
+const std::vector<ItemDefIndex> *ItemSchema::GetPrestigeCoins(uint32_t year) const
+{
+    auto it = m_prestigeCoins.find(year);
+    return it != m_prestigeCoins.end() ? &it->second : nullptr;
 }
 
 // i hate my life

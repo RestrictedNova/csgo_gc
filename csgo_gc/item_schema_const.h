@@ -90,6 +90,8 @@ enum class AttributeDefIndex : uint32_t
     MusicId = 166,
     QuestId = 168,
 
+    PrestigeYear = 221,
+
     SpraysRemaining = 232,
     SprayTintId = 233,
 

@@ -17,9 +17,14 @@
 // FIXME: add to protos?
 constexpr int k_EMsgGCRequestInventoryRefresh = 1050;
 
+// the client offers a service medal at this level (GetMaxLevel in client.dll)
+constexpr int MaxPlayerLevel = 40;
+
 ClientGC::ClientGC(uint64_t steamId)
     : m_steamId{ steamId }
     , m_inventory{ steamId }
+    , m_level{ GetConfig().m_level }
+    , m_xp{ GetConfig().m_xp }
 {
     // also called from ServerGC's constructor
     Graffiti::Initialize();
@@ -149,6 +154,10 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 
         case k_EMsgGCCStrike15_v2_Party_Register:
             OnPartyRegister(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin:
+            RequestPrestigeCoin(messageRead);
             break;
 
         default:
@@ -296,7 +305,7 @@ void ClientGC::HandleConnect(uint64_t steamId, GCMessageRead &message)
 void ClientGC::HandleSOCacheRequest()
 {
     CMsgSOCacheSubscribed message;
-    m_inventory.BuildCacheSubscription(message, GetConfig().m_level, true);
+    m_inventory.BuildCacheSubscription(message, m_level, true);
 
     GCMessageWrite messageWrite{ k_ESOMsg_CacheSubscribed, message };
     PostToHost(HostEvent::NetMessage, m_serverSteamId, std::move(messageWrite).TakeBuffer());
@@ -411,8 +420,8 @@ void ClientGC::BuildMatchmakingHello(CMsgGCCStrike15_v2_MatchmakingGC2ClientHell
     message.mutable_commendation()->set_cmd_friendly(GetConfig().m_commendedFriendly);
     message.mutable_commendation()->set_cmd_teaching(GetConfig().m_commendedTeaching);
     message.mutable_commendation()->set_cmd_leader(GetConfig().m_commendedLeader);
-    message.set_player_level(GetConfig().m_level);
-    message.set_player_cur_xp(GetConfig().m_xp);
+    message.set_player_level(m_level);
+    message.set_player_cur_xp(m_xp);
 }
 
 void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
@@ -420,7 +429,7 @@ void ClientGC::BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike1
 {
     message.set_version(0); // this is accurate
     message.set_game_data(csWelcome.SerializeAsString());
-    m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), GetConfig().m_level, false);
+    m_inventory.BuildCacheSubscription(*message.add_outofdate_subscribed_caches(), m_level, false);
     message.mutable_location()->set_latitude(65.0133006f);
     message.mutable_location()->set_longitude(25.4646212f);
     message.mutable_location()->set_country(GetConfig().m_country);
@@ -453,6 +462,18 @@ void ClientGC::SendRankUpdate()
     rank->set_rank_type_id(RankTypeDangerZone);
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_ClientGCRankUpdate, message);
+}
+
+void ClientGC::SendPlayerLevel()
+{
+    // the client replaces its stored hello with this one, which is where it reads its own level from
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientHello mmHello;
+    BuildMatchmakingHello(mmHello);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientHello, mmHello);
+
+    // everything else (scoreboard, the game server) reads it from the persona data
+    InventoryChangeMessages messages = m_inventory.UpdatePlayerLevel(m_level);
+    SendInventoryChangeMessages(messages);
 }
 
 void ClientGC::OnClientHello(GCMessageRead &messageRead)
@@ -499,7 +520,7 @@ void ClientGC::OnRequestInventoryRefresh()
     m_inventory.SetOldProtocol(true);
 
     CMsgSOCacheSubscribed message;
-    m_inventory.BuildCacheSubscription(message, GetConfig().m_level, false);
+    m_inventory.BuildCacheSubscription(message, m_level, false);
     SendMessageToGame(false, k_ESOMsg_CacheSubscribed, message);
 }
 
@@ -829,6 +850,64 @@ void ClientGC::OnPartyRegister(GCMessageRead &messageRead)
     response.set_game_type(message.game_type());
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_Party_Register, response);
+}
+
+// Service medals take two requests with the same message. The client first asks without a def index,
+// and we answer with the medal it can get and the item it would upgrade. Its popup then asks again
+// with that def index to claim it, and we grant or upgrade the medal, reset the level and answer again
+void ClientGC::RequestPrestigeCoin(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin request;
+    if (!messageRead.ReadProtobuf(request))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin failed, ignoring\n");
+        return;
+    }
+
+    if (m_level < MaxPlayerLevel)
+    {
+        Platform::Print("Ignoring service medal request at level {}, need {}\n", m_level, MaxPlayerLevel);
+        return;
+    }
+
+    ItemDefIndex offerDefIndex;
+    uint64_t upgradeItemId;
+    if (!m_inventory.GetPrestigeCoinOffer(offerDefIndex, upgradeItemId))
+    {
+        Platform::Print("No service medals in the item schema, ignoring request\n");
+        return;
+    }
+
+    CMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin response;
+
+    if (!request.defindex())
+    {
+        response.set_defindex(FromEnum(offerDefIndex));
+        response.set_upgradeid(upgradeItemId);
+        SendMessageToGame(false, k_EMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin, response);
+        return;
+    }
+
+    uint64_t coinItemId;
+    InventoryChangeMessages messages = m_inventory.ClaimPrestigeCoin(ToEnum<ItemDefIndex>(request.defindex()), coinItemId);
+    if (!coinItemId)
+    {
+        Platform::Print("Ignoring claim for service medal {}, expected {}\n", request.defindex(), FromEnum(offerDefIndex));
+        return;
+    }
+
+    // the item has to reach the client before the answer, which opens a preview of it
+    SendInventoryChangeMessages(messages);
+
+    m_level = 1;
+    m_xp = 0;
+    SendPlayerLevel();
+
+    response.set_defindex(request.defindex());
+    response.set_upgradeid(coinItemId);
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_Client2GCRequestPrestigeCoin, response);
+
+    Platform::Print("Claimed service medal {}, level reset to 1 until restart\n", request.defindex());
 }
 
 void ClientGC::CraftItem(GCMessageRead &messageRead)

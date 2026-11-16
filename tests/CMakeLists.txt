@@ -3,23 +3,34 @@
 find_package(Protobuf CONFIG REQUIRED)
 find_package(libwebsockets CONFIG REQUIRED)
 
-add_executable(editor_protocol_test editor_protocol_test.cpp)
+# tests run in a copy of the fixture since the gc writes files (inventory.txt) next to it
+set(FIXTURE_DIR ${CMAKE_CURRENT_BINARY_DIR}/fixture)
+file(GLOB_RECURSE FIXTURE_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/fixture
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixture/*)
+foreach(file ${FIXTURE_FILES})
+    configure_file(fixture/${file} ${FIXTURE_DIR}/${file} COPYONLY)
+endforeach()
 
-# the test includes csgo_gc sources directly, so it needs the same include paths
-target_include_directories(editor_protocol_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/csgo_gc
-    ${CMAKE_BINARY_DIR}/csgo_gc/generated)
+function(add_gc_test name)
+    add_executable(${name} ${name}.cpp)
 
-target_link_libraries(editor_protocol_test PRIVATE
-    csgo_gc
-    protobuf::libprotobuf-lite
-    websockets)
+    # some tests include csgo_gc sources directly, so they need the same include paths
+    target_include_directories(${name} PRIVATE
+        ${CMAKE_SOURCE_DIR}/csgo_gc
+        ${CMAKE_BINARY_DIR}/csgo_gc/generated)
 
-if (WIN32)
-    # libuv (pulled in by libwebsockets) needs this when linking an executable
-    target_link_libraries(editor_protocol_test PRIVATE dbghelp)
-endif()
+    target_link_libraries(${name} PRIVATE
+        csgo_gc
+        protobuf::libprotobuf-lite
+        websockets)
 
-add_test(NAME editor_protocol_test
-    COMMAND editor_protocol_test
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/fixture)
+    if (WIN32)
+        # libuv (pulled in by libwebsockets) needs this when linking an executable
+        target_link_libraries(${name} PRIVATE dbghelp)
+    endif()
+
+    add_test(NAME ${name} COMMAND ${name} WORKING_DIRECTORY ${FIXTURE_DIR})
+endfunction()
+
+add_gc_test(editor_protocol_test)
+add_gc_test(prestige_test)

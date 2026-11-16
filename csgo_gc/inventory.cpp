@@ -480,6 +480,12 @@ void Inventory::WriteToFile() const
     }
 }
 
+static void BuildPersonaData(CSOPersonaDataPublic &personaData, int level)
+{
+    personaData.set_player_level(level);
+    personaData.set_elevated_state(true);
+}
+
 void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level, bool server)
 {
     SOCacheState &state = server ? m_gameServerCache : m_clientCache;
@@ -511,8 +517,7 @@ void Inventory::BuildCacheSubscription(CMsgSOCacheSubscribed &message, int level
 
     {
         CSOPersonaDataPublic personaData;
-        personaData.set_player_level(level);
-        personaData.set_elevated_state(true);
+        BuildPersonaData(personaData, level);
 
         CMsgSOCacheSubscribed_SubscribedType *object = message.add_objects();
         object->set_type_id(SOTypePersonaDataPublic);
@@ -1212,6 +1217,118 @@ InventoryChangeMessages Inventory::PurchaseItems(const std::vector<uint32_t> &de
     }
 
     return FinishChanges(modify);
+}
+
+bool Inventory::GetPrestigeCoinOffer(ItemDefIndex &defIndex, uint64_t &upgradeItemId)
+{
+    const std::vector<ItemDefIndex> *coins = m_itemSchema.GetPrestigeCoins(m_itemSchema.LatestPrestigeYear());
+    if (!coins || coins->empty())
+    {
+        return false;
+    }
+
+    // highest tier of that year's medal the player already has
+    const Item *owned = nullptr;
+    size_t ownedTier = 0;
+
+    for (const auto &[itemId, item] : m_items)
+    {
+        auto it = std::find(coins->begin(), coins->end(), item.DefIndex());
+        if (it == coins->end())
+        {
+            continue;
+        }
+
+        size_t tier = static_cast<size_t>(it - coins->begin());
+        if (!owned || tier > ownedTier)
+        {
+            owned = &item;
+            ownedTier = tier;
+        }
+    }
+
+    if (!owned)
+    {
+        defIndex = coins->front();
+        upgradeItemId = 0;
+        return true;
+    }
+
+    // the top tier is offered again as is, claiming it only resets the level
+    defIndex = (*coins)[std::min(ownedTier + 1, coins->size() - 1)];
+    upgradeItemId = owned->FullIdFor(AccountId());
+    return true;
+}
+
+InventoryChangeMessages Inventory::ClaimPrestigeCoin(ItemDefIndex defIndex, uint64_t &coinItemId)
+{
+    coinItemId = 0;
+
+    ItemDefIndex offerDefIndex;
+    uint64_t upgradeItemId;
+    if (!GetPrestigeCoinOffer(offerDefIndex, upgradeItemId) || defIndex != offerDefIndex)
+    {
+        return {};
+    }
+
+    ItemDesc desc{};
+    if (!m_itemSchema.GetItemDesc(defIndex, ItemOriginDropped, UnacknowledgedEarned, desc))
+    {
+        return {};
+    }
+
+    InventoryModify modify;
+
+    if (!upgradeItemId)
+    {
+        Item &item = CreateItem(modify, std::move(desc));
+        coinItemId = item.FullIdFor(AccountId());
+        return FinishChanges(modify);
+    }
+
+    Item *item = FindItem(upgradeItemId);
+    if (!item)
+    {
+        assert(false);
+        return {};
+    }
+
+    // upgrade in place, keeping the item id, position and any equipped display slot
+    if (item->DefIndex() != defIndex)
+    {
+        ItemDesc upgraded = item->GetDesc();
+        upgraded.defIndex = desc.defIndex;
+        upgraded.level = desc.level;
+        upgraded.quality = desc.quality;
+        upgraded.rarity = desc.rarity;
+        modify.UpdateFromDesc(*item, std::move(upgraded));
+    }
+
+    coinItemId = upgradeItemId;
+    return FinishChanges(modify);
+}
+
+InventoryChangeMessages Inventory::UpdatePlayerLevel(int level)
+{
+    // a change like any other, so bump the cache version
+    m_version++;
+
+    CSOPersonaDataPublic personaData;
+    BuildPersonaData(personaData, level);
+
+    InventoryChangeMessages messages;
+
+    if (m_clientCache.subscribed)
+    {
+        AddToMultipleObjects(messages.client.updated, SOTypePersonaDataPublic, personaData);
+    }
+
+    if (m_gameServerCache.subscribed)
+    {
+        AddToMultipleObjects(messages.gameServer.updated, SOTypePersonaDataPublic, personaData);
+    }
+
+    return messages;
 }
 
 bool Inventory::UnequipItem(InventoryModify &modify, uint64_t itemId)

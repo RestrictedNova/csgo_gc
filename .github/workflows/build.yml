@@ -83,7 +83,7 @@ jobs:
       run: |
         mkdir ${{ github.workspace }}/release
         cmake -A Win32 -B ${{ github.workspace }}/build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -S ${{ github.workspace }} -DOUTDIR=${{ github.workspace }}/release -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET:STRING=x86-windows-static -DCSGO_GC_BUILD_TESTS=ON
-        cmake --build ${{ github.workspace }}/build --config ${{ matrix.build_type }} --target csgo srcds csgo_gc editor_protocol_test
+        cmake --build ${{ github.workspace }}/build --config ${{ matrix.build_type }} --target csgo srcds csgo_gc editor_protocol_test prestige_test
 
     - if: matrix.os == 'windows-latest'
       name: Test

@@ -57,6 +57,7 @@ private:
     void StorePurchaseFinalizeStruct(GCMessageRead &messageRead);
     void OnGetEventFavorites(GCMessageRead &messageRead);
     void OnPartyRegister(GCMessageRead &messageRead);
+    void RequestPrestigeCoin(GCMessageRead &messageRead);
 
     void CraftItem(GCMessageRead &messageRead);
     void DeleteItem(GCMessageRead &messageRead);
@@ -73,12 +74,17 @@ private:
     void BuildClientWelcome(CMsgClientWelcome &message, const CMsgCStrike15Welcome &csWelcome,
         const CMsgGCCStrike15_v2_MatchmakingGC2ClientHello &matchmakingHello);
     void SendRankUpdate();
+    void SendPlayerLevel();
 
     uint32_t AccountId() const { return m_steamId & 0xffffffff; }
 
     const uint64_t m_steamId;
 
     Inventory m_inventory;
+
+    // start from config.txt, claiming a service medal resets them for the session
+    int m_level;
+    int m_xp;
 
     uint64_t m_serverSteamId{};
     std::unordered_map<uint32_t, AuthTicket> m_tickets;

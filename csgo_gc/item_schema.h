@@ -149,8 +149,15 @@ public:
     bool GetItemDesc(ItemDefIndex defIndex, ItemOrigin origin, UnacknowledgedType unacknowledgedType, ItemDesc &desc) const;
     bool GetPurchaseItemDescs(ItemDefIndex defIndex, std::vector<ItemDesc> &items, std::vector<ItemDesc> &casketedItems) const;
 
+    // service medals (prestige coins): newest year that has them, 0 if none
+    uint32_t LatestPrestigeYear() const;
+
+    // a year's service medal tiers, lowest first. nullptr if the year has none
+    const std::vector<ItemDefIndex> *GetPrestigeCoins(uint32_t year) const;
+
 private:
     void ParseItems(const KeyValue *itemsKey, const KeyValue *prefabsKey);
+    void BuildPrestigeCoins();
     void ParseItemRecursive(ItemInfo &info, const KeyValue &itemKey, const KeyValue *prefabsKey);
     void ParseItemAttribute(ItemInfo &itemInfo, const KeyValue &attributeKey);
     void ParseAttributes(const KeyValue *attributesKey);
@@ -188,4 +195,7 @@ private:
 
     // look up what set item belongs to, paint kit and item def index combined into u64
     std::unordered_map<uint64_t, size_t> m_itemToSet;
+
+    // prestige year -> service medal def indexes, sorted so the lowest tier comes first
+    std::map<uint32_t, std::vector<ItemDefIndex>> m_prestigeCoins;
 };
