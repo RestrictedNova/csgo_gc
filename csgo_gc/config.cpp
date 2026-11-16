@@ -74,6 +74,8 @@ void GCConfig::Load()
 
     m_country = config.GetString("country", m_country);
     m_currency = config.GetNumber("currency", m_currency);
+
+    m_restoreDisabledUI = config.GetNumber("restore_disabled_ui", m_restoreDisabledUI);
 }
 
 float GCConfig::GetRarityWeight(Rarity rarity) const

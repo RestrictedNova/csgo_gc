@@ -56,3 +56,7 @@
 // connect to the websocket server at 127.0.0.1:13001
 // empty or null means the server is disabled
 "inventory_editor_origin"	"https://restrictednova.github.io"
+
+// bring back UI the final build switched off: your rank, XP and the service medal
+// button, and your skill groups on the player card (windows only for now)
+"restore_disabled_ui"	"1"

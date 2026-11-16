@@ -44,6 +44,9 @@ public:
 
     bool m_destroyUsedItems{ true };
 
+    // bring back UI the final build switched off (player card rank and skill groups)
+    bool m_restoreDisabledUI{ true };
+
     bool m_vacBanned{ false };
     int m_commendedFriendly{ 0 };
     int m_commendedTeaching{ 0 };
