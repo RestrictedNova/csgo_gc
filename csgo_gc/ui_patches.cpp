@@ -99,6 +99,7 @@ int Apply(std::string &source)
 
 #include <funchook.h>
 #include <windows.h>
+#include <winternl.h>
 
 #include "config.h"
 
@@ -165,21 +166,15 @@ static V8::Local *__cdecl Hk_Compile(V8::Local *result, V8::Local source, void *
     return V8::Og_Compile(result, source, origin);
 }
 
-void UIPatches::Install()
+static void HookV8(HMODULE v8)
 {
-    if (!GetConfig().m_restoreDisabledUI)
+    static bool s_hooked;
+    if (s_hooked)
     {
         return;
     }
 
-    // the launcher puts the game's bin directory on PATH, so this loads the copy panorama uses.
-    // never freed so the hook stays valid
-    HMODULE v8 = LoadLibraryW(L"v8.dll");
-    if (!v8)
-    {
-        Platform::Print("v8.dll not found, not restoring disabled UI\n");
-        return;
-    }
+    s_hooked = true;
 
     auto symbol = [v8](const char *name)
     {
@@ -216,6 +211,61 @@ void UIPatches::Install()
     }
 
     V8::Og_Compile = reinterpret_cast<V8::Compile_t>(target);
+}
+
+// ntdll's dll load notifications (documented on MSDN, declared here since the SDK doesn't)
+struct LdrDllLoadedNotificationData
+{
+    ULONG flags;
+    const UNICODE_STRING *fullDllName;
+    const UNICODE_STRING *baseDllName;
+    void *dllBase;
+    ULONG sizeOfImage;
+};
+
+constexpr ULONG LdrDllNotificationReasonLoaded = 1;
+
+using LdrDllNotificationFunction_t = void(CALLBACK *)(ULONG reason, const LdrDllLoadedNotificationData *data, void *context);
+using LdrRegisterDllNotification_t = NTSTATUS(NTAPI *)(ULONG flags, LdrDllNotificationFunction_t function, void *context, void **cookie);
+
+static void CALLBACK OnDllLoaded(ULONG reason, const LdrDllLoadedNotificationData *data, void *)
+{
+    if (reason != LdrDllNotificationReasonLoaded || !data->baseDllName)
+    {
+        return;
+    }
+
+    std::wstring_view name{ data->baseDllName->Buffer, data->baseDllName->Length / sizeof(wchar_t) };
+    if (name.size() == 6 && _wcsnicmp(name.data(), L"v8.dll", 6) == 0)
+    {
+        HookV8(static_cast<HMODULE>(data->dllBase));
+    }
+}
+
+void UIPatches::Install()
+{
+    if (!GetConfig().m_restoreDisabledUI)
+    {
+        return;
+    }
+
+    // wait for the game to load v8.dll itself. loading it early ourselves made windows resolve its
+    // icu dependencies from system32 instead of the game's bin directory, which breaks the game
+    HMODULE v8 = GetModuleHandleW(L"v8.dll");
+    if (v8)
+    {
+        HookV8(v8);
+        return;
+    }
+
+    auto registerNotification = reinterpret_cast<LdrRegisterDllNotification_t>(
+        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "LdrRegisterDllNotification"));
+
+    void *cookie;
+    if (!registerNotification || registerNotification(0, OnDllLoaded, nullptr, &cookie) != 0)
+    {
+        Platform::Print("Can't watch for v8.dll, not restoring disabled UI\n");
+    }
 }
 
 #else
