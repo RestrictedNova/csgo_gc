@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "tournament.h"
 #include "item_schema.h"
+#include "random.h"
 
 // BLAST.tv Paris Major 2023 (event 21), the last CS:GO major. Playoff results from the
 // event's Wikipedia bracket, team ids and tags from items_game.txt. Days are right,
@@ -90,6 +91,37 @@ const TournamentMatch *FindTournamentMatch(uint32_t eventId, uint64_t matchId)
     return nullptr;
 }
 
+const TournamentMatch *RandomMatchForPackage(const ItemSchema &itemSchema, ItemDefIndex packageDefIndex, uint32_t eventId)
+{
+    const TournamentInfo *tournament = FindTournament(eventId);
+    if (!tournament)
+    {
+        return nullptr;
+    }
+
+    // packages are named crate_<loc>_promo_<map>
+    constexpr std::string_view PromoTag = "_promo_";
+    std::string_view name = itemSchema.GetItemName(packageDefIndex);
+    size_t promo = name.find(PromoTag);
+    if (promo == std::string_view::npos)
+    {
+        return nullptr;
+    }
+
+    std::string_view map = name.substr(promo + PromoTag.size());
+
+    std::vector<const TournamentMatch *> candidates;
+    for (const TournamentMatch &match : tournament->matches)
+    {
+        if (match.map == map)
+        {
+            candidates.push_back(&match);
+        }
+    }
+
+    return candidates.empty() ? nullptr : Random::Select(candidates);
+}
+
 static void SetAttribute(ItemDesc &desc, AttributeDefIndex defIndex, uint32_t value)
 {
     for (ItemAttribute &attribute : desc.attributes)
@@ -120,13 +152,26 @@ void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, 
         ? package.GetAttributeValue<uint32_t>(AttributeDefIndex::TournamentEventId)
         : itemSchema.GetItemAttributeUint32(package.DefIndex(), AttributeDefIndex::TournamentEventId).value_or(0);
 
-    const uint32_t stageId = package.GetAttributeValue<uint32_t>(AttributeDefIndex::TournamentEventStageId);
-    const uint32_t team0 = package.GetAttributeValue<uint32_t>(AttributeDefIndex::TournamentEventTeam0Id);
-    const uint32_t team1 = package.GetAttributeValue<uint32_t>(AttributeDefIndex::TournamentEventTeam1Id);
+    uint32_t stageId = package.GetAttributeValue<uint32_t>(AttributeDefIndex::TournamentEventStageId);
+    uint32_t team0 = package.GetAttributeValue<uint32_t>(AttributeDefIndex::TournamentEventTeam0Id);
+    uint32_t team1 = package.GetAttributeValue<uint32_t>(AttributeDefIndex::TournamentEventTeam1Id);
 
     if (!eventId)
     {
         return;
+    }
+
+    // packages that weren't redeemed from a match (bought, or added with an editor) have no
+    // teams, so pick one of the event's matches on the package's map when we have them
+    if (!team0 || !team1)
+    {
+        const TournamentMatch *match = RandomMatchForPackage(itemSchema, package.DefIndex(), eventId);
+        if (match)
+        {
+            stageId = match->stageId;
+            team0 = match->team0->id;
+            team1 = match->team1->id;
+        }
     }
 
     SetAttribute(desc, AttributeDefIndex::TournamentEventId, eventId);

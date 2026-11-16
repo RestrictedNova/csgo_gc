@@ -39,6 +39,9 @@ struct TournamentInfo
 const TournamentInfo *FindTournament(uint32_t eventId);
 const TournamentMatch *FindTournamentMatch(uint32_t eventId, uint64_t matchId);
 
+// a random match of the event played on a souvenir package's map, nullptr if there are none
+const TournamentMatch *RandomMatchForPackage(const ItemSchema &itemSchema, ItemDefIndex packageDefIndex, uint32_t eventId);
+
 // turns the item rolled from a souvenir package into a souvenir: tournament quality,
 // no StatTrak, the package's event, stage and teams, and the event's gold stickers
 void ApplySouvenirAttributes(const ItemSchema &itemSchema, const Item &package, ItemDesc &desc);

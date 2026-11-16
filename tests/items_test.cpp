@@ -333,6 +333,38 @@ static void TestSouvenirOpening()
     CHECK(value(AttributeDefIndex::StickerId0) == 6667u);
     CHECK(value(AttributeDefIndex::StickerId1) == 6623u);
     CHECK(value(AttributeDefIndex::StickerId2) == 6707u);
+
+    // a package that wasn't redeemed from a match (bought or added with an editor)
+    // gets the teams of one of the event's matches on its map (Mirage)
+    ItemDesc boughtDesc{};
+    boughtDesc.defIndex = ToEnum<ItemDefIndex>(4894);
+    boughtDesc.quality = Quality::Unique;
+    Item bought{ 2, std::move(boughtDesc) };
+
+    skin = ItemDesc{};
+    skin.defIndex = ToEnum<ItemDefIndex>(7);
+    skin.quality = Quality::Unique;
+    ApplySouvenirAttributes(schema, bought, skin);
+
+    const std::optional<uint32_t> team0 = value(AttributeDefIndex::TournamentEventTeam0Id);
+    const std::optional<uint32_t> team1 = value(AttributeDefIndex::TournamentEventTeam1Id);
+    bool playedOnMirage = false;
+    for (const TournamentMatch &match : FindTournament(21)->matches)
+    {
+        playedOnMirage |= match.map == "de_mirage" && team0 == match.team0->id && team1 == match.team1->id
+            && value(AttributeDefIndex::TournamentEventStageId) == match.stageId;
+    }
+
+    CHECK(playedOnMirage);
+
+    // the organiser sticker is always there (team stickers depend on the fixture having them)
+    bool hasOrganiser = false;
+    for (AttributeDefIndex slot : { AttributeDefIndex::StickerId0, AttributeDefIndex::StickerId1, AttributeDefIndex::StickerId2 })
+    {
+        hasOrganiser |= value(slot) == 6707u;
+    }
+
+    CHECK(hasOrganiser);
 }
 
 static void TestTournamentData()
