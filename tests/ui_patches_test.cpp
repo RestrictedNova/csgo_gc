@@ -82,6 +82,29 @@ static void TestPlayerCard()
     CHECK(again == source);
 }
 
+// shaped like the final build's mainmenu.js
+static const char MainMenu[] =
+    "\t\t_GcLogonNotificationReceived();\r\n"
+    "\t\t_ShowLegacyVersionWarning();\r\n"
+    "\t\t_BetaEnrollmentStatusChange();\r\n"
+    "\t};\r\n"
+    "\tvar _ShowLegacyVersionWarning = function ()\r\n"
+    "\t{\r\n"
+    "\t\tUiToolkitAPI.ShowGenericPopupTwoOptions( '#legacy_support_text_title' );\r\n"
+    "\t}\r\n";
+
+static void TestLegacyPopup()
+{
+    std::string source = MainMenu;
+    CHECK(UIPatches::Apply(source) == 1);
+
+    // the call is gone, the function and the calls around it stay
+    CHECK(Count(source, "_ShowLegacyVersionWarning();") == 0);
+    CHECK(source.find("var _ShowLegacyVersionWarning = function ()") != std::string::npos);
+    CHECK(source.find("_GcLogonNotificationReceived();") != std::string::npos);
+    CHECK(source.find("_BetaEnrollmentStatusChange();") != std::string::npos);
+}
+
 static void TestOtherScripts()
 {
     std::string source = "var x = function()\r\n{\r\n\tel.AddClass( 'hidden' );\r\n\treturn;\r\n\tfoo();\r\n};\r\n";
@@ -103,6 +126,7 @@ int main(int argc, char **argv)
     }
 
     TestPlayerCard();
+    TestLegacyPopup();
     TestOtherScripts();
 
     if (s_failures)

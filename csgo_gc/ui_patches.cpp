@@ -6,15 +6,27 @@
 namespace UIPatches
 {
 
-// a run of code to find, pieces separated by any whitespace. the last piece gets removed
+// a run of code to find, pieces separated by any whitespace (unused pieces left empty).
+// the last piece gets removed
 struct ScriptPatch
 {
     std::string_view name;
     std::array<std::string_view, 3> pieces;
+
+    constexpr size_t Count() const
+    {
+        size_t count = 0;
+        while (count < pieces.size() && !pieces[count].empty())
+        {
+            count++;
+        }
+
+        return count;
+    }
 };
 
-// both are early returns Valve added in front of the original code in playercard.js
 constexpr ScriptPatch Patches[] = {
+    // early returns Valve added in front of the original code in playercard.js
     {
         "player card rank, XP and service medal button",
         { "FindChildInLayoutFile( 'JsPlayerXp' );", "elRank.AddClass( 'hidden' );", "return;" },
@@ -22,6 +34,12 @@ constexpr ScriptPatch Patches[] = {
     {
         "player card skill groups",
         { "FindChildInLayoutFile( 'JsPlayerCardSkillGroupContainer' );", "elSkillGroupContainer.AddClass( 'hidden' );", "return;" },
+    },
+
+    // the "Legacy version of CS:GO" popup the final build shows in the main menu, CS:GO never had it
+    {
+        "main menu without the legacy version popup",
+        { "_GcLogonNotificationReceived();", "_ShowLegacyVersionWarning();" },
     },
 };
 
@@ -40,10 +58,11 @@ static size_t FindPatch(const std::string &source, const ScriptPatch &patch)
 {
     for (size_t start = source.find(patch.pieces[0]); start != std::string::npos; start = source.find(patch.pieces[0], start + 1))
     {
+        const size_t count = patch.Count();
         size_t offset = start + patch.pieces[0].size();
         bool matched = true;
 
-        for (size_t i = 1; i < patch.pieces.size(); i++)
+        for (size_t i = 1; i < count; i++)
         {
             offset = SkipWhitespace(source, offset);
             if (source.compare(offset, patch.pieces[i].size(), patch.pieces[i]) != 0)
@@ -52,7 +71,7 @@ static size_t FindPatch(const std::string &source, const ScriptPatch &patch)
                 break;
             }
 
-            if (i + 1 < patch.pieces.size())
+            if (i + 1 < count)
             {
                 offset += patch.pieces[i].size();
             }
@@ -79,7 +98,7 @@ int Apply(std::string &source)
             continue;
         }
 
-        source.erase(offset, patch.pieces.back().size());
+        source.erase(offset, patch.pieces[patch.Count() - 1].size());
         applied++;
 
         // once per patch, scripts can get compiled again for every panel that uses them

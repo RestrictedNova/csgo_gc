@@ -2,7 +2,8 @@
 
 // The final CS:GO build switched some UI off by adding an early return in front of code that
 // still works (the player card's rank and XP with the service medal button, and its skill
-// groups). We hook the function Panorama compiles its scripts with and take those returns out.
+// groups), and added a "Legacy version of CS:GO" popup to the main menu. We hook the function
+// Panorama compiles its scripts with and take those returns and the popup out.
 namespace UIPatches
 {
 

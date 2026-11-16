@@ -57,6 +57,7 @@
 // empty or null means the server is disabled
 "inventory_editor_origin"	"https://restrictednova.github.io"
 
-// bring back UI the final build switched off: your rank, XP and the service medal
-// button, and your skill groups on the player card (windows only for now)
+// undo the final build's UI changes: bring back your rank, XP, the service medal button
+// and your skill groups on the player card, and remove the "Legacy version of CS:GO"
+// popup from the main menu (windows only for now)
 "restore_disabled_ui"	"1"
