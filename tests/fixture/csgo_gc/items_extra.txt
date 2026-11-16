@@ -67,6 +67,12 @@
 		"6667" { "name" "paris2023_team_apex_gold" "tournament_event_id" "21" "tournament_team_id" "117" }
 		"6707" { "name" "paris2023_team_blst_gold" "tournament_event_id" "21" "tournament_team_id" "0" }
 		"6800" { "name" "paris2023_signature_zywoo_gold" "tournament_event_id" "21" "tournament_team_id" "89" "tournament_player_id" "153400465" }
+
+		// an early major without gold stickers and without match data
+		"5001" { "name" "cologne2014_team_a" "tournament_event_id" "4" "tournament_team_id" "1" }
+		"5002" { "name" "cologne2014_team_a_holo" "tournament_event_id" "4" "tournament_team_id" "1" }
+		"5003" { "name" "cologne2014_team_b" "tournament_event_id" "4" "tournament_team_id" "2" }
+		"5004" { "name" "cologne2014_esl_a" "tournament_event_id" "4" "tournament_team_id" "0" }
 	}
 
 	"items"
@@ -78,6 +84,7 @@
 		"1314" { "name" "musickit" "prefab" "musickit_prefab" }
 
 		"4894" { "name" "crate_paris2023_promo_de_mirage" "prefab" "weapon_case_souvenirpkg" "attributes" { "tournament event id" "21" } }
+		"4200" { "name" "crate_esl14_promo_de_dust2" "prefab" "weapon_case_souvenirpkg" "attributes" { "tournament event id" "4" } }
 
 		// a tournament: viewer pass, pass with tokens, souvenir token and two coin tiers (listed out of order)
 		"4883" { "name" "tournament_pass_paris2023" "attributes" { "tournament event id" "21" } }

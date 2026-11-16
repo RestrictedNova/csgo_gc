@@ -365,6 +365,25 @@ static void TestSouvenirOpening()
     }
 
     CHECK(hasOrganiser);
+
+    // a package from an early major: no match data and no gold stickers, so two of the
+    // event's teams and its regular stickers (not the holo ones)
+    ItemDesc oldDesc{};
+    oldDesc.defIndex = ToEnum<ItemDefIndex>(4200);
+    oldDesc.quality = Quality::Unique;
+    Item old{ 3, std::move(oldDesc) };
+
+    skin = ItemDesc{};
+    skin.defIndex = ToEnum<ItemDefIndex>(7);
+    skin.quality = Quality::Unique;
+    ApplySouvenirAttributes(schema, old, skin);
+
+    CHECK(value(AttributeDefIndex::TournamentEventId) == 4u);
+    const std::set<std::optional<uint32_t>> oldTeams{ value(AttributeDefIndex::TournamentEventTeam0Id), value(AttributeDefIndex::TournamentEventTeam1Id) };
+    CHECK(oldTeams == (std::set<std::optional<uint32_t>>{ 1u, 2u }));
+    const std::set<std::optional<uint32_t>> oldStickers{ value(AttributeDefIndex::StickerId0), value(AttributeDefIndex::StickerId1) };
+    CHECK(oldStickers == (std::set<std::optional<uint32_t>>{ 5001u, 5003u }));
+    CHECK(value(AttributeDefIndex::StickerId2) == 5004u);
 }
 
 static void TestTournamentData()
