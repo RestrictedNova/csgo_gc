@@ -627,8 +627,10 @@ InventoryChangeMessages Inventory::RemoveItem(uint64_t itemId)
     return FinishChanges(modify);
 }
 
-InventoryChangeMessages Inventory::UseItem(uint64_t itemId)
+InventoryChangeMessages Inventory::UseItem(uint64_t itemId, ItemDefIndex &usedDefIndex)
 {
+    usedDefIndex = ToEnum<ItemDefIndex>(0);
+
     InventoryModify modify;
     Item *item = FindItem(itemId);
     if (!item)
@@ -637,9 +639,22 @@ InventoryChangeMessages Inventory::UseItem(uint64_t itemId)
         return {};
     }
 
-    if (item->DefIndex() != ItemDefIndex::Spray)
+    usedDefIndex = item->DefIndex();
+
+    if (usedDefIndex == ItemDefIndex::BonusRank)
     {
-        assert(false);
+        // the level itself lives in ClientGC, which raises it after this
+        if (GetConfig().m_destroyUsedItems)
+        {
+            DestroyItem(modify, item);
+        }
+
+        return FinishChanges(modify);
+    }
+
+    if (usedDefIndex != ItemDefIndex::Spray)
+    {
+        Platform::Print("Using item {} (def index {}) is not supported\n", itemId, FromEnum(usedDefIndex));
         return {};
     }
 
@@ -659,6 +674,62 @@ InventoryChangeMessages Inventory::UseItem(uint64_t itemId)
     modify.SetItemAttribute(unsealed, AttributeDefIndex::SpraysRemaining, 50u);
 
     return FinishChanges(modify, k_EGCItemCustomizationNotification_GraffitiUnseal, { unsealedId });
+}
+
+InventoryChangeMessages Inventory::StatTrakSwap(uint64_t toolId, uint64_t itemId1, uint64_t itemId2)
+{
+    Item *tool = FindItem(toolId);
+    Item *item1 = FindItem(itemId1);
+    Item *item2 = FindItem(itemId2);
+    if (!tool || !item1 || !item2 || item1 == item2 || tool->DefIndex() != ItemDefIndex::StatTrakSwapTool)
+    {
+        Platform::Print("Invalid StatTrak swap (tool {}, items {} and {}), ignoring\n", toolId, itemId1, itemId2);
+        return {};
+    }
+
+    if (!item1->HasAttribute(AttributeDefIndex::KillEater) || !item2->HasAttribute(AttributeDefIndex::KillEater))
+    {
+        Platform::Print("StatTrak swap needs two StatTrak items, ignoring\n");
+        return {};
+    }
+
+    // only the counters move, each item keeps its own score type
+    const uint32_t count1 = item1->GetAttributeValue<uint32_t>(AttributeDefIndex::KillEater);
+    const uint32_t count2 = item2->GetAttributeValue<uint32_t>(AttributeDefIndex::KillEater);
+
+    InventoryModify modify;
+    modify.SetItemAttribute(*item1, AttributeDefIndex::KillEater, count2);
+    modify.SetItemAttribute(*item2, AttributeDefIndex::KillEater, count1);
+
+    if (GetConfig().m_destroyUsedItems)
+    {
+        DestroyItem(modify, tool);
+    }
+
+    // the notification closes the client's popup even when the counts were equal
+    return FinishChanges(modify, k_EGCItemCustomizationNotification_StatTrakSwap, { itemId1, itemId2 });
+}
+
+InventoryChangeMessages Inventory::ModifyItemAttribute(uint64_t itemId, uint32_t attributeDefIndex, uint32_t value)
+{
+    // the client only sends this to pick the team graffiti of a tournament coin,
+    // which is stored in sticker slot 0, so don't let it change anything else
+    if (ToEnum<AttributeDefIndex>(attributeDefIndex) != AttributeDefIndex::StickerId0)
+    {
+        Platform::Print("Modifying attribute {} of item {} is not supported\n", attributeDefIndex, itemId);
+        return {};
+    }
+
+    Item *item = FindItem(itemId);
+    if (!item)
+    {
+        assert(false);
+        return {};
+    }
+
+    InventoryModify modify;
+    modify.SetItemAttribute(*item, AttributeDefIndex::StickerId0, value);
+    return FinishChanges(modify);
 }
 
 InventoryChangeMessages Inventory::UnlockCrate(uint64_t crateId, uint64_t keyId)

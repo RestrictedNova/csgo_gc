@@ -40,7 +40,11 @@ public:
 
     InventoryChangeMessages EquipItem(uint64_t itemId, uint32_t classId, uint32_t slotId);
     InventoryChangeMessages RemoveItem(uint64_t itemId);
-    InventoryChangeMessages UseItem(uint64_t itemId);
+    // usedDefIndex is the def index of the item that was used, so the caller can
+    // handle effects outside the inventory (bonus ranks raise the player level)
+    InventoryChangeMessages UseItem(uint64_t itemId, ItemDefIndex &usedDefIndex);
+    InventoryChangeMessages StatTrakSwap(uint64_t toolId, uint64_t itemId1, uint64_t itemId2);
+    InventoryChangeMessages ModifyItemAttribute(uint64_t itemId, uint32_t attributeDefIndex, uint32_t value);
     InventoryChangeMessages UnlockCrate(uint64_t crateId, uint64_t keyId);
     InventoryChangeMessages ApplySticker(const CMsgApplySticker &message);
     InventoryChangeMessages ScrapeSticker(const CMsgApplySticker &message);

@@ -18,6 +18,16 @@
 			"name"	"kill eater"
 			"stored_as_integer"	"1"
 		}
+		"81"
+		{
+			"name"	"kill eater score type"
+			"stored_as_integer"	"1"
+		}
+		"113"
+		{
+			"name"	"sticker slot 0 id"
+			"stored_as_integer"	"1"
+		}
 		"111"
 		{
 			"name"	"custom name attr"

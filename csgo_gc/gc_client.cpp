@@ -160,6 +160,18 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
             RequestPrestigeCoin(messageRead);
             break;
 
+        case k_EMsgGCStatTrakSwap:
+            StatTrakSwap(messageRead);
+            break;
+
+        case k_EMsgGCModifyItemAttribute:
+            ModifyItemAttribute(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_ClientDeepStats:
+            ClientDeepStats(messageRead);
+            break;
+
         default:
             Platform::Print("ClientGC::HandleMessage: unhandled protobuf message {}\n",
                 MessageName(messageRead.TypeUnmasked()));
@@ -564,8 +576,78 @@ void ClientGC::UseItemRequest(GCMessageRead &messageRead)
         return;
     }
 
-    InventoryChangeMessages messages = m_inventory.UseItem(message.item_id());
+    ItemDefIndex usedDefIndex;
+    InventoryChangeMessages messages = m_inventory.UseItem(message.item_id(), usedDefIndex);
     SendInventoryChangeMessages(messages);
+
+    if (usedDefIndex == ItemDefIndex::BonusRank)
+    {
+        m_level = std::min(m_level + 1, MaxPlayerLevel);
+        m_xp = 0;
+        SendPlayerLevel();
+
+        // shows the "new rank" popup, the client checks for a zero result and the bonus rank def index
+        GCMessageWrite response{ k_EMsgGCUseItemResponse };
+        response.WriteUint32(0);
+        response.WriteUint32(FromEnum(ItemDefIndex::BonusRank));
+
+        uint32_t typeMasked = response.TypeMasked();
+        PostToHost(HostEvent::Message, typeMasked, std::move(response).TakeBuffer());
+
+        Platform::Print("Used a bonus rank, level {} until restart\n", m_level);
+    }
+}
+
+void ClientGC::StatTrakSwap(GCMessageRead &messageRead)
+{
+    CMsgApplyStatTrakSwap message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgApplyStatTrakSwap failed, ignoring\n");
+        return;
+    }
+
+    InventoryChangeMessages messages = m_inventory.StatTrakSwap(
+        message.tool_item_id(),
+        message.item_1_item_id(),
+        message.item_2_item_id());
+
+    SendInventoryChangeMessages(messages);
+}
+
+void ClientGC::ModifyItemAttribute(GCMessageRead &messageRead)
+{
+    CMsgModifyItemAttribute message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgModifyItemAttribute failed, ignoring\n");
+        return;
+    }
+
+    InventoryChangeMessages messages = m_inventory.ModifyItemAttribute(
+        message.item_id(),
+        message.attr_defidx(),
+        message.attr_value());
+
+    SendInventoryChangeMessages(messages);
+}
+
+void ClientGC::ClientDeepStats(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_ClientDeepStats request;
+    if (!messageRead.ReadProtobuf(request))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_ClientDeepStats failed, ignoring\n");
+        return;
+    }
+
+    // there's no match history to report, but answering with an empty range
+    // lets the stats page load instead of timing out with a connection error
+    CMsgGCCStrike15_ClientDeepStats response;
+    response.set_account_id(request.has_account_id() ? request.account_id() : AccountId());
+    *response.mutable_range() = request.range();
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_ClientDeepStats, response);
 }
 
 static void AddressString(uint32_t ip, uint32_t port, char *buffer, size_t bufferSize)
@@ -927,8 +1009,15 @@ void ClientGC::CraftItem(GCMessageRead &messageRead)
     auto itemIds = std::make_unique_for_overwrite<uint64_t[]>(itemIdCount);
     memcpy(itemIds.get(), itemIdsPtr, itemIdCount * sizeof(uint64_t));
 
-    uint64_t outputItemId;
+    uint64_t outputItemId = 0;
     InventoryChangeMessages messages = m_inventory.CraftItem({ itemIds.get(), itemIdCount }, outputItemId);
+    if (!outputItemId)
+    {
+        // used to answer with an uninitialized item id here, the client times out with an error instead
+        Platform::Print("Crafting failed, not answering\n");
+        return;
+    }
+
     SendInventoryChangeMessages(messages);
 
     {

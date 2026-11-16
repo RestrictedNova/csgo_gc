@@ -30,7 +30,11 @@ function(add_gc_test name)
     endif()
 
     add_test(NAME ${name} COMMAND ${name} WORKING_DIRECTORY ${FIXTURE_DIR})
+
+    # tests share the fixture's inventory.txt, so never run them at the same time
+    set_tests_properties(${name} PROPERTIES RESOURCE_LOCK fixture)
 endfunction()
 
 add_gc_test(editor_protocol_test)
 add_gc_test(prestige_test)
+add_gc_test(items_test)

@@ -58,6 +58,9 @@ private:
     void OnGetEventFavorites(GCMessageRead &messageRead);
     void OnPartyRegister(GCMessageRead &messageRead);
     void RequestPrestigeCoin(GCMessageRead &messageRead);
+    void StatTrakSwap(GCMessageRead &messageRead);
+    void ModifyItemAttribute(GCMessageRead &messageRead);
+    void ClientDeepStats(GCMessageRead &messageRead);
 
     void CraftItem(GCMessageRead &messageRead);
     void DeleteItem(GCMessageRead &messageRead);

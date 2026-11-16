@@ -44,8 +44,10 @@ enum class ItemDefIndex : uint32_t
     Casket = 1201,
     Sticker = 1209,
     MusicKit = 1314,
+    StatTrakSwapTool = 1324,
     Spray = 1348,
     SprayPaint = 1349,
+    BonusRank = 4607, // "xpgrant"
     Patch = 4609
 };
 
