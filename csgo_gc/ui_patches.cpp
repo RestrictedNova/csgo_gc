@@ -166,15 +166,17 @@ static V8::Local *__cdecl Hk_Compile(V8::Local *result, V8::Local source, void *
     return V8::Og_Compile(result, source, origin);
 }
 
+// the game loads v8.dll, unloads it and loads it again, so every load gets hooked
+static HMODULE s_hookedV8;
+
 static void HookV8(HMODULE v8)
 {
-    static bool s_hooked;
-    if (s_hooked)
+    if (s_hookedV8 == v8)
     {
         return;
     }
 
-    s_hooked = true;
+    s_hookedV8 = v8;
 
     auto symbol = [v8](const char *name)
     {
@@ -224,21 +226,32 @@ struct LdrDllLoadedNotificationData
 };
 
 constexpr ULONG LdrDllNotificationReasonLoaded = 1;
+constexpr ULONG LdrDllNotificationReasonUnloaded = 2;
 
 using LdrDllNotificationFunction_t = void(CALLBACK *)(ULONG reason, const LdrDllLoadedNotificationData *data, void *context);
 using LdrRegisterDllNotification_t = NTSTATUS(NTAPI *)(ULONG flags, LdrDllNotificationFunction_t function, void *context, void **cookie);
 
-static void CALLBACK OnDllLoaded(ULONG reason, const LdrDllLoadedNotificationData *data, void *)
+static void CALLBACK OnDllNotification(ULONG reason, const LdrDllLoadedNotificationData *data, void *)
 {
-    if (reason != LdrDllNotificationReasonLoaded || !data->baseDllName)
+    if (!data->baseDllName)
     {
         return;
     }
 
     std::wstring_view name{ data->baseDllName->Buffer, data->baseDllName->Length / sizeof(wchar_t) };
-    if (name.size() == 6 && _wcsnicmp(name.data(), L"v8.dll", 6) == 0)
+    if (name.size() != 6 || _wcsnicmp(name.data(), L"v8.dll", 6) != 0)
+    {
+        return;
+    }
+
+    if (reason == LdrDllNotificationReasonLoaded)
     {
         HookV8(static_cast<HMODULE>(data->dllBase));
+    }
+    else if (reason == LdrDllNotificationReasonUnloaded && s_hookedV8 == data->dllBase)
+    {
+        // it can come back at the same address, unpatched
+        s_hookedV8 = nullptr;
     }
 }
 
@@ -251,20 +264,21 @@ void UIPatches::Install()
 
     // wait for the game to load v8.dll itself. loading it early ourselves made windows resolve its
     // icu dependencies from system32 instead of the game's bin directory, which breaks the game
-    HMODULE v8 = GetModuleHandleW(L"v8.dll");
-    if (v8)
-    {
-        HookV8(v8);
-        return;
-    }
-
     auto registerNotification = reinterpret_cast<LdrRegisterDllNotification_t>(
         GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "LdrRegisterDllNotification"));
 
     void *cookie;
-    if (!registerNotification || registerNotification(0, OnDllLoaded, nullptr, &cookie) != 0)
+    if (!registerNotification || registerNotification(0, OnDllNotification, nullptr, &cookie) != 0)
     {
         Platform::Print("Can't watch for v8.dll, not restoring disabled UI\n");
+        return;
+    }
+
+    // in case it's already loaded
+    HMODULE v8 = GetModuleHandleW(L"v8.dll");
+    if (v8)
+    {
+        HookV8(v8);
     }
 }
 
