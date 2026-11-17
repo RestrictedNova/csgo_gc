@@ -2,6 +2,7 @@
 // runs in a copy of tests/fixture (ctest does this), it writes csgo_gc/inventory.txt there
 
 #include "stdafx.h"
+#include "config.h"
 #include "inventory.h"
 #include "inventory_messages.h"
 #include "item_schema.h"
@@ -49,6 +50,10 @@ enum TestItem : uint32_t
     SecondViewerPass = 14,
     StickeredRifle = 15, // sticker without a wear attribute, like souvenir stickers
     PatchedAgent = 16,
+    WeaponCase = 17,
+    CaseKey = 18,
+    SecondWeaponCase = 19,
+    SecondCaseKey = 20,
 };
 
 static uint64_t Id(TestItem item)
@@ -82,6 +87,10 @@ static void WriteInventory()
            "attributes" { "113" "6623" } }
     "16" { "inventory" "16" "def_index" "5036" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "5"
            "attributes" { "113" "4609" } }
+    "17" { "inventory" "17" "def_index" "4001" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "18" { "inventory" "18" "def_index" "1203" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "19" { "inventory" "19" "def_index" "4001" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
+    "20" { "inventory" "20" "def_index" "1203" "level" "1" "quality" "4" "flags" "0" "origin" "0" "in_use" "0" "rarity" "1" }
 }
 )",
         f);
@@ -166,6 +175,29 @@ static void TestStatTrakSwap(Inventory &inventory)
     CHECK(saved.Attribute(StatTrakA, "80") == "5");
     CHECK(saved.Attribute(StatTrakB, "80") == "100");
     CHECK(!saved.Item(SwapTool)); // used tools are destroyed by default
+}
+
+static void TestCaseOpening(Inventory &inventory)
+{
+    // destroy_used_items on (the default): the case and the key are used up
+    InventoryChangeMessages messages = inventory.UnlockCrate(Id(WeaponCase), Id(CaseKey));
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_UnlockCrate);
+
+    SavedInventory saved;
+    CHECK(!saved.Item(WeaponCase));
+    CHECK(!saved.Item(CaseKey));
+
+    // off: the case stays, but the key is still used up
+    GCConfig &config = const_cast<GCConfig &>(GetConfig());
+    config.m_destroyUsedItems = false;
+    messages = inventory.UnlockCrate(Id(SecondWeaponCase), Id(SecondCaseKey));
+    config.m_destroyUsedItems = true;
+    CHECK(messages.notification.request() == k_EGCItemCustomizationNotification_UnlockCrate);
+    CHECK(messages.client.destroyed.size() == 1);
+
+    SavedInventory after;
+    CHECK(after.Item(SecondWeaponCase));
+    CHECK(!after.Item(SecondCaseKey));
 }
 
 static void TestCoinGraffiti(Inventory &inventory)
@@ -574,6 +606,7 @@ int main()
         TestStatsSubscription(subscription, serverSubscription);
 
         TestStatTrakSwap(inventory);
+        TestCaseOpening(inventory);
         TestCoinGraffiti(inventory);
         TestShuffle(inventory);
         TestTournamentPasses(inventory);

@@ -899,11 +899,14 @@ InventoryChangeMessages Inventory::UnlockCrate(uint64_t crateId, uint64_t keyId)
     Item &item = CreateItem(modify, std::move(temp));
     uint64_t itemId = item.FullIdFor(AccountId());
 
+    // the key is always used up (containers that don't need one have no key id), only the
+    // container can stay with destroy_used_items off
+    assert(keyId != itemId);
+    DestroyItemById(modify, keyId);
+
     if (GetConfig().m_destroyUsedItems)
     {
-        assert(keyId != itemId);
         DestroyItem(modify, crate);
-        DestroyItemById(modify, keyId);
     }
 
     return FinishChanges(modify, k_EGCItemCustomizationNotification_UnlockCrate, { itemId });

@@ -31,7 +31,8 @@
 	"99"	"1280"
 }
 
-// remove keys, cases, stickers, etc. after they've been used
+// remove cases, stickers, name tags, etc. after they've been used. keys are used up either way,
+// so with this off you keep the case and need a new key to open it again
 "destroy_used_items"	"1"
 
 // steam related options

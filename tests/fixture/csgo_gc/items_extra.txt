@@ -38,6 +38,7 @@
 			"name"	"prestige year"
 			"stored_as_integer"	"1"
 		}
+		"68" { "name" "set supply crate series" "stored_as_integer" "0" }
 		"114" { "name" "sticker slot 0 wear" "stored_as_integer" "0" }
 		"117" { "name" "sticker slot 1 id" "stored_as_integer" "1" }
 		"121" { "name" "sticker slot 2 id" "stored_as_integer" "1" }
@@ -78,6 +79,16 @@
 		"5004" { "name" "cologne2014_esl_a" "tournament_event_id" "4" "tournament_team_id" "0" }
 	}
 
+	"client_loot_lists"
+	{
+		"crate_test_items" { "weapon_ak47" "1" }
+	}
+
+	"revolving_loot_lists"
+	{
+		"1" "crate_test_items"
+	}
+
 	"items"
 	{
 		"7" { "name" "weapon_ak47" "prefab" "rifle" }
@@ -85,6 +96,10 @@
 		"60" { "name" "weapon_m4a1_silencer" "prefab" "rifle" }
 		"5036" { "name" "customplayer_ctm_fbi" "prefab" "customplayer" }
 		"1314" { "name" "musickit" "prefab" "musickit_prefab" }
+
+		// a weapon case holding one item, and its key
+		"4001" { "name" "crate_test" "attributes" { "set supply crate series" "1" } }
+		"1203" { "name" "weapon_case_key" }
 
 		"4894" { "name" "crate_paris2023_promo_de_mirage" "prefab" "weapon_case_souvenirpkg" "attributes" { "tournament event id" "21" } }
 		"4200" { "name" "crate_esl14_promo_de_dust2" "prefab" "weapon_case_souvenirpkg" "attributes" { "tournament event id" "4" } }
