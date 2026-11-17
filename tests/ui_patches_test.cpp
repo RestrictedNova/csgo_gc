@@ -134,7 +134,7 @@ static void TestMatchmakingPatches()
     std::string accept = AcceptPopup;
     CHECK(UIPatches::Apply(accept) == 1);
     const size_t ready = accept.find("SetLocalPlayerReady( 'accept' );");
-    const size_t start = accept.find("LobbyAPI.StartMatchmaking");
+    const size_t start = accept.find("GameInterfaceAPI.ConsoleCommand");
     CHECK(ready != std::string::npos && start != std::string::npos && ready < start);
     CHECK(accept.rfind('}') > start);
 

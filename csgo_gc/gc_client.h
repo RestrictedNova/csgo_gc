@@ -4,6 +4,7 @@
 #include "gc_shared.h"
 #include "inventory.h"
 #include "progress.h"
+#include "reserved_server.h"
 
 class GCMessageRead;
 
@@ -90,14 +91,14 @@ private:
     void OnMatchResult(const MatchResult &result);
 
     // Official Matchmaking against bots (rank_progress): Go starts a search, a match is found
-    // after a while, and accepting it in the popup starts a match against bots like Practice
-    // with bots does (a ui patch). Matches set up this way are the ones that count
+    // after a while, and accepting it in the popup starts the map here (a ui patch), which the
+    // game then runs as an official matchmaking server (MatchWatcher). Matches set up this way
+    // are the ones that count
     void OnMatchmakingPreferences(std::string_view preferences);
     void MatchmakingStart(GCMessageRead &messageRead);
     void MatchmakingStop(GCMessageRead &messageRead);
     void MatchmakingTick();
     void SendMatchmakingStatus(int matchmaking, std::string_view error = {});
-    void SetGameSetting(std::string_view name, std::string_view value);
 
     // the level or XP changed (service medal, bonus rank, a match), saves it with rank_progress
     void SetLevel(int level, int xp);
@@ -130,8 +131,7 @@ private:
     struct MatchmakingPreferences
     {
         std::string mode;
-        std::string maps;
-        std::string botDifficulty; // player_botdifflast_s, put back after a match
+        uint32_t flags{ 0 }; // competitive match length: 16 long, 32 short, 48 either
     };
 
     MatchmakingPreferences m_matchmakingPreferences;
@@ -143,6 +143,7 @@ private:
         RankedMode mode{ RankedMode::Competitive };
         std::vector<std::string> maps;
         uint32_t gameType{ 0 };
+        bool shortMatch{ false };
     };
 
     BotMatchSearch m_search;
@@ -151,14 +152,18 @@ private:
     struct OfficialMatch
     {
         bool pending{ false };
+        bool started{ false }; // the official matchmaking server is up, so no expiring
         RankedMode mode{ RankedMode::Competitive };
         std::string map;
         int botDifficulty{ 0 };
-        std::chrono::steady_clock::time_point expires;
-        std::string restoreBotDifficulty;
+        std::chrono::steady_clock::time_point expires; // to accept and load the map
     };
 
     OfficialMatch m_officialMatch;
+
+    // answers the client's reservation checks for the found match, which is what brings up the
+    // accept popup
+    ReservedServer m_reservedServer;
 
     // commendations given this session by account id, so the commend popup shows them again
     std::unordered_map<uint32_t, PlayerCommendationInfo> m_commendations;

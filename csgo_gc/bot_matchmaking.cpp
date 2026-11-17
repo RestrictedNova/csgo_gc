@@ -32,23 +32,63 @@ std::optional<RankedMode> ModeFromSetting(std::string_view mode)
     return std::nullopt;
 }
 
-std::vector<std::string> MapsFromSetting(std::string_view setting, RankedMode mode)
+struct MapBit
 {
+    uint32_t bit;
+    std::string_view map;
+};
+
+// client.dll's bit -> map tables for the game type, the branch for the newest match ids (the
+// tables changed as maps came and went, older matches decode with older ones). competitive's
+// lobby map veto isn't a map
+constexpr MapBit CompetitiveBits[] = {
+    { 0x2, "de_dust2" },
+    { 0x4, "de_train" },
+    { 0x8, "de_ancient" },
+    { 0x10, "de_inferno" },
+    { 0x20, "de_nuke" },
+    { 0x40, "de_vertigo" },
+    { 0x80, "de_mirage" },
+    { 0x100, "cs_office" },
+    { 0x200, "cs_italy" },
+    { 0x400, "cs_assault" },
+    { 0x800, "cs_militia" },
+    { 0x1000, "de_cache" },
+    { 0x4000, "de_breach" },
+    { 0x8000, "de_anubis" },
+    { 0x10000, "de_tuscan" },
+    { 0x80000, "cs_agency" },
+    { 0x100000, "de_overpass" },
+    { 0x200000, "de_cbble" },
+    { 0x400000, "de_canals" },
+};
+
+constexpr MapBit WingmanBits[] = {
+    { 0x4, "de_train" },
+    { 0x8, "de_lake" },
+    { 0x10, "de_inferno" },
+    { 0x20, "de_shortnuke" },
+    { 0x40, "de_vertigo" },
+    { 0x100, "de_prime" },
+    { 0x200, "de_blagai" },
+    { 0x400, "de_boyard" },
+    { 0x800, "de_chalice" },
+    { 0x8000, "de_shortdust" },
+    { 0x100000, "de_overpass" },
+    { 0x200000, "de_cbble" },
+};
+
+std::vector<std::string> MapsFromGameType(uint32_t gameType, RankedMode mode)
+{
+    const uint32_t bits = gameType >> 8;
+
     std::vector<std::string> maps;
-
-    while (!setting.empty())
+    for (const MapBit &entry : mode == RankedMode::Wingman ? std::span<const MapBit>{ WingmanBits } : std::span<const MapBit>{ CompetitiveBits })
     {
-        const size_t comma = setting.find(',');
-        std::string_view group = setting.substr(0, comma);
-        setting = comma == std::string_view::npos ? std::string_view{} : setting.substr(comma + 1);
-
-        constexpr std::string_view Prefix = "mg_";
-        if (!group.starts_with(Prefix) || group == "mg_lobby_mapveto")
+        if (bits & entry.bit)
         {
-            continue;
+            maps.emplace_back(entry.map);
         }
-
-        maps.emplace_back(group.substr(Prefix.size()));
     }
 
     if (maps.empty())
@@ -82,6 +122,39 @@ int BotDifficultyFor(double rating)
     }
 
     return best;
+}
+
+int PlayerCount(RankedMode mode)
+{
+    return mode == RankedMode::Wingman ? 4 : 10;
+}
+
+std::string Reservation(uint64_t cookie, uint32_t accountId, RankedMode mode, int position)
+{
+    const int players = PlayerCount(mode);
+    position = std::clamp(position, 0, players - 1);
+
+    std::string reservation = std::format("Q{:x},1,1:", cookie);
+
+    // made up account ids for the bots' places, never the player's
+    uint32_t placeholder = 1;
+    for (int i = 0; i < players; i++)
+    {
+        if (i == position)
+        {
+            reservation += std::format("[{:x}]", accountId);
+            continue;
+        }
+
+        if (placeholder == accountId)
+        {
+            placeholder++;
+        }
+
+        reservation += std::format("[{:x}]", placeholder++);
+    }
+
+    return reservation;
 }
 
 } // namespace BotMatchmaking

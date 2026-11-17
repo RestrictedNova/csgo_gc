@@ -45,6 +45,7 @@ add_library(csgo_gc STATIC
     networking_server.cpp
     progress.cpp
     random.cpp
+    reserved_server.cpp
     steam_callbacks.cpp
     steam_hook.cpp
     steamgamecoordinatorproxy.cpp
@@ -107,4 +108,9 @@ endif()
 # libwebsockets kludge
 if(WIN32)
     target_link_libraries(csgo_gc PRIVATE synchronization)
+endif()
+
+# the reserved matchmaking server's socket
+if(WIN32)
+    target_link_libraries(csgo_gc PRIVATE ws2_32)
 endif()

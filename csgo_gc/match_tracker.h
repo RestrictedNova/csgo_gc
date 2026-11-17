@@ -78,4 +78,19 @@ void Shutdown();
 std::string GetGameSetting(const char *name);
 void SetGameSetting(const char *name, const char *value);
 
+// a match found by Official Matchmaking is about to start on this machine. once the player is in
+// the next local server, it becomes an official matchmaking server: the reservation (from
+// BotMatchmaking::Reservation) puts them on their team, bots of this difficulty fill the
+// others' places and the warmup is the one official servers had once everyone connected
+struct OfficialMatchSettings
+{
+    std::string reservation;
+    int botDifficulty{ 0 };
+    int players{ 10 };
+    bool shortMatch{ false }; // competitive's "short match": first to 9 (gamemode_competitive_short.cfg)
+};
+
+void PrepareOfficialMatch(const OfficialMatchSettings &settings);
+void CancelOfficialMatch();
+
 } // namespace MatchWatcher

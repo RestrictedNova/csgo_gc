@@ -45,25 +45,25 @@ constexpr std::string_view OfficialMatchmakingEntry = R"js(
 	}
 	)js";
 
-// csgo_gc has no matchmaking servers: accepting a match found by Official Matchmaking starts it
-// against bots on this machine, the way Practice with bots does, on the map the gc picked and
-// with the bot difficulty it lent player_botdifflast_s
+// csgo_gc has no matchmaking servers: accepting a match found by Official Matchmaking starts the
+// map the gc picked on this machine, with the online competitive or wingman settings, and the game
+// turns it into an official matchmaking server with bots once the player is in (MatchWatcher)
 constexpr std::string_view AcceptStartsBotMatch = R"js(
 		if ( m_lobbySettings && m_lobbySettings.options && m_lobbySettings.options.server === 'official' )
 		{
 			$.Schedule( 1.5, function()
 			{
 				var oCsgoGcSettings = LobbyAPI.GetSessionSettings();
-				var strCsgoGcMap = ( oCsgoGcSettings && oCsgoGcSettings.game && oCsgoGcSettings.game.map ) ? oCsgoGcSettings.game.map : '';
+				var oCsgoGcGame = ( oCsgoGcSettings && oCsgoGcSettings.game ) ? oCsgoGcSettings.game : {};
+				var strCsgoGcMap = oCsgoGcGame.map ? oCsgoGcGame.map : '';
+				var nCsgoGcMode = ( oCsgoGcGame.mode === 'scrimcomp2v2' ) ? 2 : 1;
 				LobbyAPI.StopMatchmaking();
 				$.DispatchEvent( 'CloseAcceptPopup' );
 				$.DispatchEvent( 'UIPopupButtonClicked', '' );
-				LobbyAPI.UpdateSessionSettings( { update: { Options: { action: 'custommatch', server: 'listen' }, Game: { mapgroupname: 'mg_' + strCsgoGcMap, map: strCsgoGcMap } } } );
-				$.Schedule( 0.5, function()
+				if ( strCsgoGcMap )
 				{
-					GameTypesAPI.SetCustomBotDifficulty( GameInterfaceAPI.GetSettingString( 'player_botdifflast_s' ) );
-					LobbyAPI.StartMatchmaking( '', '', '', '' );
-				} );
+					GameInterfaceAPI.ConsoleCommand( 'game_type 0; game_mode ' + nCsgoGcMode + '; map ' + strCsgoGcMap );
+				}
 			} );
 		}
 		)js";

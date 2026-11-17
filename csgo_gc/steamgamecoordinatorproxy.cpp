@@ -2,6 +2,7 @@
 #include "steamgamecoordinatorproxy.h"
 #include "gc_client.h"
 #include "gc_server.h"
+#include "keyvalue.h"
 #include "match_tracker.h"
 #include "steam_callbacks.h"
 
@@ -158,14 +159,19 @@ SharedGC &SteamGameCoordinatorProxyClient::GetGC()
 
 void SteamGameCoordinatorProxyClient::BeforeSendMessage(uint32_t type)
 {
-    // the gc can't see the play menu, so hand it the official mode and maps ticked there (and
-    // the practice bot difficulty, which it borrows for the match) before the search starts
+    // the gc can't see the play menu, so hand it the official mode and match length picked there
+    // before the search starts (the ticked maps are in MatchmakingStart's game type). the final
+    // build keeps the mode in a "_v20" convar
     if ((type & ~ProtobufMask) == k_EMsgGCCStrike15_v2_MatchmakingStart)
     {
-        const std::string mode = MatchWatcher::GetGameSetting("ui_playsettings_mode_official");
-        const std::string maps = MatchWatcher::GetGameSetting(("ui_playsettings_maps_official_" + mode).c_str());
-        const std::string botDifficulty = MatchWatcher::GetGameSetting("player_botdifflast_s");
-        const std::string preferences = mode + '\n' + maps + '\n' + botDifficulty;
+        std::string mode = MatchWatcher::GetGameSetting("ui_playsettings_mode_official_v20");
+        if (mode.empty())
+        {
+            mode = MatchWatcher::GetGameSetting("ui_playsettings_mode_official");
+        }
+
+        const std::string flags = MatchWatcher::GetGameSetting(("ui_playsettings_flags_official_" + mode).c_str());
+        const std::string preferences = mode + '\n' + flags;
         m_gc.PostToGC(GCEvent::MatchmakingPreferences, 0, preferences.data(), static_cast<uint32_t>(preferences.size()));
     }
 }
@@ -205,13 +211,31 @@ void SteamGameCoordinatorProxyClient::RunFrame()
             break;
         }
 
-        case HostEvent::SetGameSetting:
+        case HostEvent::PrepareOfficialMatch:
         {
-            const std::string setting{ event.buffer.begin(), event.buffer.end() };
-            const size_t separator = setting.find('\0');
-            if (separator != std::string::npos)
+            if (event.buffer.empty())
             {
-                MatchWatcher::SetGameSetting(setting.substr(0, separator).c_str(), setting.c_str() + separator + 1);
+                MatchWatcher::CancelOfficialMatch();
+                break;
+            }
+
+            std::string_view lines{ reinterpret_cast<const char *>(event.buffer.data()), event.buffer.size() };
+            std::vector<std::string_view> fields;
+            while (!lines.empty())
+            {
+                const size_t end = lines.find('\n');
+                fields.push_back(lines.substr(0, end));
+                lines = end == std::string_view::npos ? std::string_view{} : lines.substr(end + 1);
+            }
+
+            if (fields.size() == 4)
+            {
+                MatchWatcher::OfficialMatchSettings settings;
+                settings.reservation = fields[0];
+                FromString(fields[1], settings.botDifficulty);
+                FromString(fields[2], settings.players);
+                settings.shortMatch = fields[3] == "1";
+                MatchWatcher::PrepareOfficialMatch(settings);
             }
             break;
         }

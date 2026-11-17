@@ -6,8 +6,10 @@
 #include "match_tracker.h"
 #include "platform.h"
 #include "progress.h"
+#include "reserved_server.h"
 
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <map>
 
@@ -410,14 +412,21 @@ static void TestBotMatchmaking()
     CHECK(!BotMatchmaking::ModeFromSetting("casual"));
     CHECK(!BotMatchmaking::ModeFromSetting("survival"));
 
-    // the ticked maps, without the lobby map veto
-    std::vector<std::string> maps = BotMatchmaking::MapsFromSetting("mg_de_dust2,mg_lobby_mapveto,mg_de_mirage", RankedMode::Competitive);
+    // the ticked maps from the game type: what the game sent with only mirage ticked, then
+    // dust2, mirage and the lobby map veto
+    std::vector<std::string> maps = BotMatchmaking::MapsFromGameType(0x8008, RankedMode::Competitive);
+    CHECK((maps == std::vector<std::string>{ "de_mirage" }));
+    maps = BotMatchmaking::MapsFromGameType(((0x2 | 0x80 | 0x20000) << 8) | 8, RankedMode::Competitive);
     CHECK((maps == std::vector<std::string>{ "de_dust2", "de_mirage" }));
 
+    // the same bit is a different map in wingman
+    maps = BotMatchmaking::MapsFromGameType((0x8000 << 8) | 8, RankedMode::Wingman);
+    CHECK((maps == std::vector<std::string>{ "de_shortdust" }));
+
     // none ticked: the mode's own maps
-    maps = BotMatchmaking::MapsFromSetting("", RankedMode::Competitive);
+    maps = BotMatchmaking::MapsFromGameType(8, RankedMode::Competitive);
     CHECK(maps.size() == 7 && std::ranges::count(maps, "de_mirage") == 1);
-    maps = BotMatchmaking::MapsFromSetting("mg_lobby_mapveto", RankedMode::Wingman);
+    maps = BotMatchmaking::MapsFromGameType((0x20000 << 8) | 8, RankedMode::Wingman);
     CHECK(std::ranges::count(maps, "de_shortdust") == 1);
 
     // bots a bit below your skill: a new account gets normal bots, the best get expert
@@ -425,11 +434,66 @@ static void TestBotMatchmaking()
     CHECK(BotMatchmaking::BotDifficultyFor(900) == 0);
     CHECK(BotMatchmaking::BotDifficultyFor(1750) == 2);
     CHECK(BotMatchmaking::BotDifficultyFor(2300) == 3);
+
+    // the reservation the game was tested with: the player's account id in hex at their place,
+    // made up ones for the bots, half the list on each team
+    CHECK(BotMatchmaking::Reservation(0x5f3a9c21, 0xb328643, RankedMode::Competitive, 7)
+        == "Q5f3a9c21,1,1:[1][2][3][4][5][6][7][b328643][8][9]");
+    CHECK(BotMatchmaking::Reservation(0xabc, 0xb328643, RankedMode::Wingman, 0) == "Qabc,1,1:[b328643][1][2][3]");
+
+    // never the player's id twice
+    const std::string low = BotMatchmaking::Reservation(1, 2, RankedMode::Wingman, 3);
+    CHECK(low == "Q1,1,1:[1][3][4][2]");
+}
+
+static void TestReservationCheck()
+{
+    // the check the client sends the reserved server (engine.dll's CServerMsg_CheckReservation):
+    // header, '!', host version, token, stage, reservation id, steam id
+    const uint8_t packet[] = {
+        0xff, 0xff, 0xff, 0xff, '!',
+        0x39, 0x36, 0x00, 0x00, // 13881
+        0x34, 0x12, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x00,
+        0xfb, 0xb5, 0x71, 0x5b, 0x89, 0x9f, 0xd7, 0x98,
+        0x43, 0x86, 0x32, 0x0b, 0x01, 0x00, 0x10, 0x01,
+    };
+
+    const std::optional<ReservationCheck::Request> request = ReservationCheck::ParseRequest(packet, sizeof(packet));
+    CHECK(request.has_value());
+    if (request)
+    {
+        CHECK(request->hostVersion == 13881);
+        CHECK(request->token == 0x1234);
+        CHECK(request->stage == ReservationCheck::StageReserved);
+        CHECK(request->reservationId == 0x98d79f895b71b5fbull);
+        CHECK(request->steamId == 76561198148126275ull);
+
+        // the server's answer (engine.dll writes it the same way): '%', the version, token and
+        // stage back, then waiting for 0 of 10
+        const std::vector<uint8_t> reply = ReservationCheck::Reply(*request, 0, 10);
+        const std::vector<uint8_t> expected = {
+            0xff, 0xff, 0xff, 0xff, '%',
+            0x39, 0x36, 0x00, 0x00,
+            0x34, 0x12, 0x00, 0x00,
+            0x01, 0x00, 0x00, 0x00,
+            0x00, 0x0a,
+        };
+        CHECK(reply == expected);
+    }
+
+    // anything else isn't a check
+    CHECK(!ReservationCheck::ParseRequest(packet, sizeof(packet) - 1));
+    uint8_t other[sizeof(packet)];
+    memcpy(other, packet, sizeof(packet));
+    other[4] = 'T';
+    CHECK(!ReservationCheck::ParseRequest(other, sizeof(other)));
 }
 
 int main()
 {
     TestBotMatchmaking();
+    TestReservationCheck();
     TestRating();
     TestSkillGroups();
     TestPlacementAndExpiry();

@@ -87,6 +87,11 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, std::vector<uint8_t> &&buf
         OnMatchmakingPreferences({ reinterpret_cast<const char *>(buffer.data()), buffer.size() });
         break;
 
+    case GCEvent::OfficialMatchStarted:
+        m_officialMatch.started = true;
+        m_reservedServer.Close();
+        break;
+
     default:
         assert(false);
         break;
@@ -593,7 +598,6 @@ void ClientGC::OnMatchResult(const MatchResult &result)
     if (official)
     {
         m_officialMatch.pending = false;
-        SetGameSetting("player_botdifflast_s", m_officialMatch.restoreBotDifficulty);
     }
     else if (!PracticeMatchesCount)
     {
@@ -640,27 +644,15 @@ void ClientGC::OnMatchResult(const MatchResult &result)
         update.oldLevel, update.newLevel, m_xp, Progress::XpPerLevel);
 }
 
-void ClientGC::SetGameSetting(std::string_view name, std::string_view value)
-{
-    std::vector<uint8_t> buffer{ name.begin(), name.end() };
-    buffer.push_back(0);
-    buffer.insert(buffer.end(), value.begin(), value.end());
-    PostToHost(HostEvent::SetGameSetting, 0, std::move(buffer));
-}
-
 void ClientGC::OnMatchmakingPreferences(std::string_view preferences)
 {
-    auto nextLine = [&preferences]
+    const size_t newline = preferences.find('\n');
+    m_matchmakingPreferences.mode = preferences.substr(0, newline);
+    m_matchmakingPreferences.flags = 0;
+    if (newline != std::string_view::npos)
     {
-        const size_t end = preferences.find('\n');
-        std::string line{ preferences.substr(0, end) };
-        preferences = end == std::string_view::npos ? std::string_view{} : preferences.substr(end + 1);
-        return line;
-    };
-
-    m_matchmakingPreferences.mode = nextLine();
-    m_matchmakingPreferences.maps = nextLine();
-    m_matchmakingPreferences.botDifficulty = nextLine();
+        FromString(preferences.substr(newline + 1), m_matchmakingPreferences.flags);
+    }
 }
 
 void ClientGC::SendMatchmakingStatus(int matchmaking, std::string_view error)
@@ -690,8 +682,8 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
         return;
     }
 
-    Platform::Print("Matchmaking start: game type {:#x}, {} player(s), mode \"{}\", maps \"{}\"\n",
-        message.game_type(), message.account_ids_size(), m_matchmakingPreferences.mode, m_matchmakingPreferences.maps);
+    Platform::Print("Matchmaking start: game type {:#x}, {} player(s), mode \"{}\", flags {}\n",
+        message.game_type(), message.account_ids_size(), m_matchmakingPreferences.mode, m_matchmakingPreferences.flags);
 
     const std::optional<RankedMode> mode = BotMatchmaking::ModeFromSetting(m_matchmakingPreferences.mode);
     if (!GetConfig().m_rankProgress || !mode)
@@ -702,10 +694,17 @@ void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
         return;
     }
 
+    m_reservedServer.Close();
+
     m_search.searching = true;
     m_search.mode = *mode;
-    m_search.maps = BotMatchmaking::MapsFromSetting(m_matchmakingPreferences.maps, *mode);
+    m_search.maps = BotMatchmaking::MapsFromGameType(message.game_type(), *mode);
     m_search.gameType = message.game_type();
+
+    // competitive's match length: long, short, or either (a long or short match, whichever)
+    const uint32_t length = m_matchmakingPreferences.flags & BotMatchmaking::FlagsAnyLength;
+    m_search.shortMatch = *mode == RankedMode::Competitive
+        && (length == BotMatchmaking::FlagsShortMatch || (length == BotMatchmaking::FlagsAnyLength && Random::Uint32(0, 1)));
     m_search.foundAt = std::chrono::steady_clock::now() + std::chrono::seconds{ Random::Uint32(5, 20) };
 
     SendMatchmakingStatus(1);
@@ -722,6 +721,10 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
         m_search.searching = false;
     }
 
+    // after accepting the popup stops matchmaking and starts the map, so a match found earlier
+    // stays pending (it's counted when it ends)
+    m_reservedServer.Close();
+
     SendMatchmakingStatus(0);
 }
 
@@ -729,11 +732,15 @@ void ClientGC::MatchmakingTick()
 {
     const auto now = std::chrono::steady_clock::now();
 
-    if (m_officialMatch.pending && now > m_officialMatch.expires)
+    m_reservedServer.Update();
+
+    // declined, or never started: the next local server is just a server again
+    if (m_officialMatch.pending && !m_officialMatch.started && now > m_officialMatch.expires)
     {
         Platform::Print("The match matchmaking found was never played\n");
         m_officialMatch.pending = false;
-        SetGameSetting("player_botdifflast_s", m_officialMatch.restoreBotDifficulty);
+        m_reservedServer.Close();
+        PostToHost(HostEvent::PrepareOfficialMatch, 0, {});
     }
 
     if (!m_search.searching || now < m_search.foundAt)
@@ -745,29 +752,44 @@ void ClientGC::MatchmakingTick()
 
     const int botDifficulty = BotMatchmaking::BotDifficultyFor(m_progress.Skill(m_search.mode).rating);
     const std::string map = Random::Select(m_search.maps);
-
-    // accepting starts the match the way Practice with bots does, with its bot difficulty, so
-    // lend it the one matchmaking picked and put the player's back when the match is over
-    if (!m_officialMatch.pending)
-    {
-        m_officialMatch.restoreBotDifficulty = m_matchmakingPreferences.botDifficulty;
-    }
+    const uint64_t reservationId = (static_cast<uint64_t>(Random::Uint32()) << 32) | Random::Uint32(1);
 
     m_officialMatch.pending = true;
+    m_officialMatch.started = false;
     m_officialMatch.mode = m_search.mode;
     m_officialMatch.map = map;
     m_officialMatch.botDifficulty = botDifficulty;
-    m_officialMatch.expires = now + std::chrono::minutes{ 15 };
-    SetGameSetting("player_botdifflast_s", std::to_string(botDifficulty));
+    m_officialMatch.expires = now + std::chrono::minutes{ 5 };
 
-    // the match found popup, with nobody else to wait for
+    // accepting starts the map here, the game makes it an official matchmaking server with this
+    // reservation once the player is in. a random place in it is a random team
+    const int players = BotMatchmaking::PlayerCount(m_search.mode);
+    const std::string reservationText = BotMatchmaking::Reservation(reservationId, AccountId(), m_search.mode,
+        static_cast<int>(Random::Uint32(0, static_cast<uint32_t>(players - 1))));
+    const std::string prepare = reservationText + '\n' + std::to_string(botDifficulty) + '\n'
+        + std::to_string(players) + '\n' + (m_search.shortMatch ? "1" : "0");
+    PostToHost(HostEvent::PrepareOfficialMatch, 0, { prepare.begin(), prepare.end() });
+
+    // the server matchmaking reserved. the client checks with it that everyone's reservation went
+    // through before showing the accept popup
+    uint32_t ip = MakeAddress(127, 0, 0, 1);
+    uint16_t port = m_reservedServer.Open(reservationId, players);
+    if (port)
+    {
+        ip = m_reservedServer.Ip();
+    }
+    else
+    {
+        port = 27015;
+    }
+
     CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
     reserve.set_serverid(0x0184000000000001ull); // an anonymous game server
-    reserve.set_direct_udp_ip(MakeAddress(127, 0, 0, 1));
-    reserve.set_direct_udp_port(27015);
-    reserve.set_reservationid((static_cast<uint64_t>(Random::Uint32()) << 32) | Random::Uint32(1));
+    reserve.set_direct_udp_ip(ip);
+    reserve.set_direct_udp_port(port);
+    reserve.set_reservationid(reservationId);
     reserve.set_map(map);
-    reserve.set_server_address("127.0.0.1:27015");
+    reserve.set_server_address(std::format("{}.{}.{}.{}:{}", ip >> 24, (ip >> 16) & 0xff, (ip >> 8) & 0xff, ip & 0xff, port));
 
     CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *reservation = reserve.mutable_reservation();
     reservation->add_account_ids(AccountId());
@@ -776,8 +798,9 @@ void ClientGC::MatchmakingTick()
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
 
-    Platform::Print("Match found: {} on {} against bot difficulty {}\n",
-        m_search.mode == RankedMode::Wingman ? "wingman" : "competitive", map, botDifficulty);
+    Platform::Print("Match found: {}{} on {} against bot difficulty {}\n",
+        m_search.mode == RankedMode::Wingman ? "wingman" : "competitive", m_search.shortMatch ? " (short)" : "",
+        map, botDifficulty);
 }
 
 void ClientGC::SendPlayerLevel()

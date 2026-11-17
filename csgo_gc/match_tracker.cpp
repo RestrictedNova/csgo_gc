@@ -307,11 +307,45 @@ struct WatcherState
     MatchTracker tracker;
     SharedGC *gc{};
 
+    // set from the server's events (under the mutex), cleared for every new server
+    bool humanConnected{};
+    bool humanOnTeam{};
+
+    // a local server started or stopped (under the mutex). the listener registered at the main
+    // menu stays registered into the next map, so the server's own events are what tell
+    bool serverSpawned{};
+    bool serverShutDown{};
+
     EngineEventManager *events{};
     void *cvar{};
     void *engineClient{};
     bool triedInterfaces{};
     bool listening{};
+
+    // counts local servers: a new one starts when the engine resets its events, or the server
+    // says it spawned
+    uint32_t serverGeneration{};
+    std::chrono::steady_clock::time_point serverStarted;
+
+    // Official Matchmaking against bots, main thread only
+    struct OfficialMatch
+    {
+        enum class Stage
+        {
+            None,
+            WaitingForServer, // for the player to be in the next local server
+            Joining, // official settings applied, getting the player on their team
+            Playing,
+        };
+
+        Stage stage{ Stage::None };
+        uint32_t afterGeneration{};
+        MatchWatcher::OfficialMatchSettings settings;
+        int joinAttempts{};
+        std::chrono::steady_clock::time_point nextStep;
+    };
+
+    OfficialMatch official;
 };
 
 // never freed, the engine could still have the listener during shutdown
@@ -367,6 +401,29 @@ void EventListener::FireGameEvent(EngineGameEvent *event)
     };
 
     std::lock_guard lock{ state.mutex };
+
+    // bots never send player_connect_full, the person playing does once they're in
+    const std::string_view name = matchEvent.Name();
+    if (name == "server_spawn" || name == "game_newmap")
+    {
+        // nobody's in the new server yet, the player connects after this
+        state.serverSpawned = true;
+        state.humanConnected = false;
+        state.humanOnTeam = false;
+    }
+    else if (name == "server_shutdown")
+    {
+        state.serverShutDown = true;
+    }
+    else if (name == "player_connect_full")
+    {
+        state.humanConnected = true;
+    }
+    else if (name == "player_team" && !matchEvent.GetBool("isbot") && matchEvent.GetInt("team") >= 2)
+    {
+        state.humanOnTeam = true;
+    }
+
     PostResult(state, state.tracker.OnEvent(matchEvent, readSettings));
 }
 
@@ -395,6 +452,153 @@ bool GetInterfaces(WatcherState &state)
 } // namespace
 
 static void RunDevCommands();
+static void RunConsoleCommand(const char *command);
+
+constexpr const char *ReservationConVar = "sv_mmqueue_reservation";
+
+static void OnServerGone(WatcherState &state)
+{
+    {
+        std::lock_guard lock{ state.mutex };
+        PostResult(state, state.tracker.OnServerGone());
+    }
+
+    // the official match is over, the reservation would make the next local server official too
+    using Stage = WatcherState::OfficialMatch::Stage;
+    if (state.official.stage == Stage::Joining || state.official.stage == Stage::Playing)
+    {
+        state.official.stage = Stage::None;
+        MatchWatcher::SetGameSetting(ReservationConVar, "");
+    }
+}
+
+// resetPlayers is false when the server's spawn event already did that: the player may have
+// connected since
+static void OnNewServer(WatcherState &state, bool resetPlayers = true)
+{
+    state.serverGeneration++;
+    state.serverStarted = std::chrono::steady_clock::now();
+
+    if (resetPlayers)
+    {
+        std::lock_guard lock{ state.mutex };
+        state.humanConnected = false;
+        state.humanOnTeam = false;
+    }
+
+    // a server nobody set up as official mustn't be one
+    if (state.official.stage != WatcherState::OfficialMatch::Stage::WaitingForServer
+        && !MatchWatcher::GetGameSetting(ReservationConVar).empty())
+    {
+        MatchWatcher::SetGameSetting(ReservationConVar, "");
+    }
+}
+
+// what official servers did with a reservation, worked out with dev_commands: the reservation
+// set once the player is in (set before, the server waits for players forever), the
+// competitive config's own bot kicked so every bot gets the difficulty matchmaking picked,
+// then joingame and jointeam, which the server answers with the player's reserved team
+static void UpdateOfficialMatch(WatcherState &state)
+{
+    using Stage = WatcherState::OfficialMatch::Stage;
+    WatcherState::OfficialMatch &match = state.official;
+
+    if (!state.listening || match.stage == Stage::None || match.stage == Stage::Playing
+        || state.serverGeneration <= match.afterGeneration)
+    {
+        return;
+    }
+
+    bool connected;
+    bool onTeam;
+    {
+        std::lock_guard lock{ state.mutex };
+        connected = state.humanConnected;
+        onTeam = state.humanOnTeam;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+
+    if (match.stage == Stage::WaitingForServer)
+    {
+        // in case the player was in before we were listening
+        if (!connected && now < state.serverStarted + std::chrono::seconds{ 15 })
+        {
+            return;
+        }
+
+        const std::string warmup = MatchWatcher::GetGameSetting("mp_warmuptime_all_players_connected");
+        MatchWatcher::SetGameSetting(ReservationConVar, match.settings.reservation.c_str());
+        MatchWatcher::SetGameSetting("bot_difficulty", std::to_string(match.settings.botDifficulty).c_str());
+        MatchWatcher::SetGameSetting("sv_auto_adjust_bot_difficulty", "0");
+        RunConsoleCommand("bot_kick");
+        MatchWatcher::SetGameSetting("bot_quota_mode", "fill");
+        MatchWatcher::SetGameSetting("bot_quota", std::to_string(match.settings.players).c_str());
+
+        // the bots count as connected, so the short warmup official servers switched to then
+        MatchWatcher::SetGameSetting("mp_warmuptime", warmup.empty() || warmup == "0" ? "60" : warmup.c_str());
+
+        if (match.settings.shortMatch)
+        {
+            MatchWatcher::SetGameSetting("mp_maxrounds", "16");
+            MatchWatcher::SetGameSetting("mp_starting_losses", "2");
+        }
+
+        Platform::Print("Running this match as an official matchmaking server: {}\n", match.settings.reservation);
+
+        match.stage = Stage::Joining;
+        match.joinAttempts = 0;
+        match.nextStep = now + std::chrono::seconds{ 3 };
+
+        std::lock_guard lock{ state.mutex };
+        if (state.gc)
+        {
+            state.gc->PostToGC(GCEvent::OfficialMatchStarted, 0, nullptr, 0);
+        }
+
+        return;
+    }
+
+    // Stage::Joining. joining too soon after connecting doesn't work, so keep trying
+    if (onTeam)
+    {
+        match.stage = Stage::Playing;
+        return;
+    }
+
+    if (now < match.nextStep)
+    {
+        return;
+    }
+
+    if (match.joinAttempts++ >= 10)
+    {
+        Platform::Print("Couldn't get onto a team in the official match\n");
+        match.stage = Stage::Playing;
+        return;
+    }
+
+    RunConsoleCommand("joingame");
+    RunConsoleCommand("jointeam 3 1");
+    match.nextStep = now + std::chrono::seconds{ 3 };
+}
+
+void MatchWatcher::PrepareOfficialMatch(const OfficialMatchSettings &settings)
+{
+    WatcherState &state = State();
+    state.official.stage = WatcherState::OfficialMatch::Stage::WaitingForServer;
+    state.official.afterGeneration = state.serverGeneration;
+    state.official.settings = settings;
+}
+
+void MatchWatcher::CancelOfficialMatch()
+{
+    WatcherState &state = State();
+    if (state.official.stage == WatcherState::OfficialMatch::Stage::WaitingForServer)
+    {
+        state.official.stage = WatcherState::OfficialMatch::Stage::None;
+    }
+}
 
 void MatchWatcher::Update(SharedGC &gc)
 {
@@ -436,21 +640,42 @@ void MatchWatcher::Update(SharedGC &gc)
 
     // the engine drops every listener when a server starts or stops, so register again whenever
     // we're gone. with no server running there are no events and this does nothing
-    if (state.events->FindListener(&Listener(), "round_end"))
+    if (!state.events->FindListener(&Listener(), "round_end"))
     {
-        return;
+        if (state.listening)
+        {
+            state.listening = false;
+            OnServerGone(state);
+        }
+
+        state.events->AddListenerGlobal(&Listener(), true);
+        state.listening = state.events->FindListener(&Listener(), "round_end");
+        if (state.listening)
+        {
+            OnNewServer(state);
+        }
     }
 
-    if (state.listening)
+    bool shutDown;
+    bool spawned;
     {
-        state.listening = false;
-
         std::lock_guard lock{ state.mutex };
-        PostResult(state, state.tracker.OnServerGone());
+        shutDown = std::exchange(state.serverShutDown, false);
+        spawned = std::exchange(state.serverSpawned, false);
     }
 
-    state.events->AddListenerGlobal(&Listener(), true);
-    state.listening = state.events->FindListener(&Listener(), "round_end");
+    // a map change is both, the old server first
+    if (shutDown)
+    {
+        OnServerGone(state);
+    }
+
+    if (spawned)
+    {
+        OnNewServer(state, false);
+    }
+
+    UpdateOfficialMatch(state);
 }
 
 void MatchWatcher::Shutdown()
@@ -496,6 +721,20 @@ void MatchWatcher::SetGameSetting(const char *name, const char *value)
     if (conVar)
     {
         (*reinterpret_cast<ConVarSetString_t **>(conVar))[14](conVar, value);
+    }
+}
+
+static void RunConsoleCommand(const char *command)
+{
+    WatcherState &state = State();
+    if (!state.engineClient && !GetInterfaces(state))
+    {
+        return;
+    }
+
+    if (state.engineClient)
+    {
+        (*reinterpret_cast<ExecuteClientCmd_t **>(state.engineClient))[108](state.engineClient, command);
     }
 }
 
@@ -552,12 +791,8 @@ static void RunDevCommands()
 
         if (verb == "cmd")
         {
-            WatcherState &state = State();
-            if (state.engineClient)
-            {
-                Platform::Print("dev: running \"{}\"\n", argument);
-                (*reinterpret_cast<ExecuteClientCmd_t **>(state.engineClient))[108](state.engineClient, argument.c_str());
-            }
+            Platform::Print("dev: running \"{}\"\n", argument);
+            RunConsoleCommand(argument.c_str());
         }
         else if (verb == "set" || verb == "get")
         {
@@ -571,6 +806,14 @@ static void RunDevCommands()
             Platform::Print("dev: {} = \"{}\"{}\n", name, MatchWatcher::GetGameSetting(name.c_str()),
                 FindConVar(name.c_str()) ? "" : " (no such convar)");
         }
+        else if (verb == "watcher")
+        {
+            WatcherState &state = State();
+            std::lock_guard lock{ state.mutex };
+            Platform::Print("dev: listening {}, server generation {}, official stage {} after generation {}, human connected {}, on team {}\n",
+                state.listening, state.serverGeneration, FromEnum(state.official.stage), state.official.afterGeneration,
+                state.humanConnected, state.humanOnTeam);
+        }
         else
         {
             Platform::Print("dev: unknown command \"{}\"\n", line);
@@ -579,6 +822,14 @@ static void RunDevCommands()
 }
 
 #else
+
+void MatchWatcher::PrepareOfficialMatch(const OfficialMatchSettings &)
+{
+}
+
+void MatchWatcher::CancelOfficialMatch()
+{
+}
 
 std::string MatchWatcher::GetGameSetting(const char *)
 {
