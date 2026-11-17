@@ -7,7 +7,8 @@ In Valve games, the Game Coordinator (GC) is a backend service most notably resp
 
 ## Features
 
-- **Inventory:** Editing, equipping, case opening, stickers, patches, graffiti, StatTrak, storage units, name tags, music kits and the in-game store
+- **Inventory:** Editing, equipping, case opening, trade up contracts, souvenir packages, stickers, patches, graffiti, StatTrak and StatTrak swaps, storage units, name tags, music kits and the in-game store
+- **Official Matchmaking against bots** (optional): Competitive and Wingman matches on an official matchmaking server against bots of your skill group, earning your level, XP and skill groups
 - **Multiplayer:** Lobbies, dedicated servers and a functional server browser
 - Steam P2P networking for inventory data
 - Live inventory editing via a WebSocket server
@@ -15,7 +16,7 @@ In Valve games, the Game Coordinator (GC) is a backend service most notably resp
 - Full Windows, Linux and macOS support
 - Works without full Steam API emulation
 
-Missing inventory features (trade ups, souvenirs, StatTrak swaps, etc.) are planned. Operation-related features are not currently planned. Matchmaking is not planned, as a proper implementation would require a centralized server, which this project intentionally avoids.
+Operation-related features are not currently planned. Matchmaking against other players is not planned, as a proper implementation would require a centralized server, which this project intentionally avoids. [Official Matchmaking against bots](#official-matchmaking-against-bots) takes its place.
 
 ## Installation
 
@@ -38,6 +39,30 @@ A web-based realtime editor is available [here](https://github.com/RestrictedNov
 ### Offline editing
 
 See [available GUI editors](https://github.com/mikkokko/csgo_gc/issues/82). There is also a guide for editing inventory.txt by hand [here](https://gist.github.com/dricotec/1ae3deb06c42012970c00df914348e76) if you want to do that for some reason.
+
+## Official Matchmaking against bots
+
+Set `"rank_progress" "1"` in `csgo_gc/config.txt` to earn your level, XP and skill groups by playing against bots (Windows only for now). Your progress is saved to `csgo_gc/progress.txt`. A new progress file starts like a new account: level 1 and no skill groups. This replaces the fixed `ranks`, `player_level` and `player_cur_xp` options.
+
+It brings Official Matchmaking back to the play menu for Competitive and Wingman:
+
+1. Pick your maps and press Go. A match is found after a few seconds and the accept popup appears.
+2. Accept it before the timer runs out. If you don't, you're removed from the queue, like in CS:GO.
+3. The match runs on your own machine as an official matchmaking server: warmup, no team select, official rules, and bots in the other places. Competitive uses your long or short match setting.
+4. When the match ends, the RANK and SKILL GROUP screens show the XP you earned, level ups and skill group changes.
+
+### Progress
+
+- Only matches found by Official Matchmaking count. Practice matches against bots don't.
+- Skill groups work like CS:GO's: a hidden Glicko-2 rating that shows after 10 wins in that mode and expires after 30 days without a win.
+- Leaving a match before it ends counts as a loss and earns no XP.
+- XP is 30 per round won in Competitive and 15 in Wingman, with the weekly XP bonus. Every 5000 XP is a level. At level 40 you can claim a service medal.
+
+### Bots
+
+The bots play like players of your skill group. There is one tier of bots for each of the 18 skill groups, chosen from your rating when a match is found. They get better as you rank up, but don't change during a match.
+
+The tiers are based on [csst.at](https://csst.at/)'s averages of Leetify stats by FACEIT level, specifically time to damage: how long players take to hurt an enemy after spotting them. It ranges from 680 ms at Silver I to 515 ms at The Global Elite. The bots' reaction time, aim, skill and aggression scale with it, from about Valve's Normal bots at Silver I to its hardest Expert bots at The Global Elite. In your rating, the bots count as players of their skill group.
 
 ## Configuration
 

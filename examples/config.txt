@@ -68,3 +68,8 @@
 // "player_level" and "player_cur_xp" above, and a new progress file starts like a new
 // account: level 1, no skill groups (windows only for now)
 "rank_progress"	"0"
+
+// for development: runs the lines of csgo_gc/dev_commands.txt in the game every half second,
+// then deletes the file. "set <convar> <value>" and "get <convar>" (hidden development-only
+// convars too) and "cmd <console command>", the results go to the log (windows only for now)
+"dev_commands"	"0"
