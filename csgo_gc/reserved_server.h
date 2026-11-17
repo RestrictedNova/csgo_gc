@@ -52,6 +52,9 @@ public:
     // answers the checks that arrived, called every frame
     void Update();
 
+    // the player accepted the match: the client checks that everyone has (since the last Open)
+    bool Accepted() const { return m_acceptedAt.has_value(); }
+
 private:
     static constexpr intptr_t InvalidSocket = -1;
 

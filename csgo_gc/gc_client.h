@@ -152,12 +152,18 @@ private:
     struct OfficialMatch
     {
         bool pending{ false };
+        bool accepted{ false }; // in the accept popup
         bool started{ false }; // the official matchmaking server is up, so no expiring
         RankedMode mode{ RankedMode::Competitive };
         std::string map;
         RankId botTier{ RankGoldNova2 }; // the skill group the bots play like
-        std::chrono::steady_clock::time_point expires; // to accept and load the map
+        std::chrono::steady_clock::time_point acceptBy; // the accept popup's time
+        std::chrono::steady_clock::time_point expires; // to load the map once accepted
     };
+
+    // the found match is off (not accepted, or never started): the next local server is just a
+    // server again
+    void CancelOfficialMatch(std::string_view reason);
 
     OfficialMatch m_officialMatch;
 

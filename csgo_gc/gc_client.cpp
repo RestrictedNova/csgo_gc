@@ -733,10 +733,20 @@ void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
     }
 
     // after accepting the popup stops matchmaking and starts the map, so a match found earlier
-    // stays pending (it's counted when it ends)
+    // stays pending (it's counted when it ends). the checks that came in first still count as
+    // accepting it
+    m_reservedServer.Update();
     m_reservedServer.Close();
 
     SendMatchmakingStatus(0);
+}
+
+void ClientGC::CancelOfficialMatch(std::string_view reason)
+{
+    Platform::Print("{}\n", reason);
+    m_officialMatch.pending = false;
+    m_reservedServer.Close();
+    PostToHost(HostEvent::PrepareOfficialMatch, 0, {});
 }
 
 void ClientGC::MatchmakingTick()
@@ -745,13 +755,30 @@ void ClientGC::MatchmakingTick()
 
     m_reservedServer.Update();
 
-    // declined, or never started: the next local server is just a server again
-    if (m_officialMatch.pending && !m_officialMatch.started && now > m_officialMatch.expires)
+    if (m_officialMatch.pending && !m_officialMatch.started)
     {
-        Platform::Print("The match matchmaking found was never played\n");
-        m_officialMatch.pending = false;
-        m_reservedServer.Close();
-        PostToHost(HostEvent::PrepareOfficialMatch, 0, {});
+        // pressing accept makes the client check that everyone has with the reserved server
+        if (m_reservedServer.Accepted())
+        {
+            m_officialMatch.accepted = true;
+        }
+
+        if (!m_officialMatch.accepted && now > m_officialMatch.acceptBy)
+        {
+            CancelOfficialMatch("The match wasn't accepted");
+
+            // what the gc told a player who didn't accept: out of the queue, which closes the
+            // popup with "YOU FAILED TO ACCEPT"
+            CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+            update.set_matchmaking(0);
+            update.set_error("Failed to ready up");
+            update.add_failready_account_id_sessions(AccountId());
+            SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+        }
+        else if (now > m_officialMatch.expires)
+        {
+            CancelOfficialMatch("The match matchmaking found was never played");
+        }
     }
 
     if (!m_search.searching || now < m_search.foundAt)
@@ -767,10 +794,12 @@ void ClientGC::MatchmakingTick()
     const uint64_t reservationId = (static_cast<uint64_t>(Random::Uint32()) << 32) | Random::Uint32(1);
 
     m_officialMatch.pending = true;
+    m_officialMatch.accepted = false;
     m_officialMatch.started = false;
     m_officialMatch.mode = m_search.mode;
     m_officialMatch.map = map;
     m_officialMatch.botTier = botTier;
+    m_officialMatch.acceptBy = now + std::chrono::seconds{ 21 }; // sv_mmqueue_reservation_timeout
     m_officialMatch.expires = now + std::chrono::minutes{ 5 };
 
     // accepting starts the map here, the game makes it an official matchmaking server with this
