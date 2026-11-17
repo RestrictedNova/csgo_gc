@@ -26,6 +26,7 @@ add_library(csgo_gc STATIC
     bot_matchmaking.cpp
     case_opening.cpp
     config.cpp
+    end_of_match.cpp
     gc_client.cpp
     gc_message.cpp
     gc_server.cpp

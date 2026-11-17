@@ -72,6 +72,20 @@ int EarnedXp(RankedMode mode, int roundsWon);
 // 11167 and 0.175x after that. weekGained is what was gained this week before this match
 int ApplyWeeklyBonus(int earned, int weekGained);
 
+// the XP gained with the weekly bonus, split the way the end of match screen lists it: earned at
+// the normal rate, the weekly bonus on top of that, and earned at the reduced rate once the
+// week's bonus is used up
+struct WeeklyXp
+{
+    int earned{ 0 };
+    int bonus{ 0 };
+    int reduced{ 0 };
+
+    int Total() const { return earned + bonus + reduced; }
+};
+
+WeeklyXp SplitWeeklyXp(int earned, int weekGained);
+
 // weeks start on wednesday 00:00 UTC
 uint32_t WeekIndex(uint32_t time);
 
@@ -86,9 +100,12 @@ public:
         RankId newRank;
         double oldRating;
         double newRating;
+        int wins; // in the mode, after this match
         int earnedXp; // rounds won x multiplier
         int gainedXp; // with the weekly bonus
+        Progress::WeeklyXp xp; // gainedXp, split
         int oldLevel;
+        int oldXp;
         int newLevel;
     };
 

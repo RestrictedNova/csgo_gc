@@ -240,6 +240,10 @@ void SteamGameCoordinatorProxyClient::RunFrame()
             break;
         }
 
+        case HostEvent::UserMessage:
+            MatchWatcher::DispatchUserMessage(static_cast<int>(event.id), event.buffer.data(), static_cast<int>(event.buffer.size()));
+            break;
+
         default:
             assert(false);
             break;

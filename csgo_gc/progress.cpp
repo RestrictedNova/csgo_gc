@@ -140,6 +140,11 @@ int EarnedXp(RankedMode mode, int roundsWon)
 
 int ApplyWeeklyBonus(int earned, int weekGained)
 {
+    return SplitWeeklyXp(earned, weekGained).Total();
+}
+
+WeeklyXp SplitWeeklyXp(int earned, int weekGained)
+{
     struct Tier
     {
         double end; // weekly XP this tier lasts until
@@ -155,7 +160,9 @@ int ApplyWeeklyBonus(int earned, int weekGained)
 
     double remaining = earned;
     double week = weekGained;
-    double gained = 0;
+    double normal = 0;
+    double bonus = 0;
+    double reduced = 0;
 
     for (const Tier &tier : Tiers)
     {
@@ -172,12 +179,25 @@ int ApplyWeeklyBonus(int earned, int weekGained)
         // earned XP it takes to fill the rest of this tier
         const double fill = (tier.end - week) / tier.multiplier;
         const double used = std::min(remaining, fill);
-        gained += used * tier.multiplier;
+        if (tier.multiplier >= 1)
+        {
+            normal += used;
+            bonus += used * (tier.multiplier - 1);
+        }
+        else
+        {
+            reduced += used * tier.multiplier;
+        }
+
         week += used * tier.multiplier;
         remaining -= used;
     }
 
-    return static_cast<int>(std::lround(gained));
+    WeeklyXp xp;
+    xp.earned = static_cast<int>(std::lround(normal));
+    xp.bonus = static_cast<int>(std::lround(bonus));
+    xp.reduced = static_cast<int>(std::lround(reduced));
+    return xp;
 }
 
 uint32_t WeekIndex(uint32_t time)
@@ -314,9 +334,11 @@ PlayerProgress::MatchUpdate PlayerProgress::ApplyMatch(const MatchResult &result
 
     update.newRank = Progress::VisibleSkillGroup(skill, now);
     update.newRating = skill.rating;
+    update.wins = skill.wins;
 
     // XP only for matches played to the end
     update.oldLevel = m_level;
+    update.oldXp = m_xp;
     if (!result.abandoned)
     {
         const uint32_t week = Progress::WeekIndex(now);
@@ -327,7 +349,8 @@ PlayerProgress::MatchUpdate PlayerProgress::ApplyMatch(const MatchResult &result
         }
 
         update.earnedXp = Progress::EarnedXp(result.mode, result.roundsWon);
-        update.gainedXp = Progress::ApplyWeeklyBonus(update.earnedXp, m_xpWeekGained);
+        update.xp = Progress::SplitWeeklyXp(update.earnedXp, m_xpWeekGained);
+        update.gainedXp = update.xp.Total();
         m_xpWeekGained += update.gainedXp;
 
         m_xp += update.gainedXp;

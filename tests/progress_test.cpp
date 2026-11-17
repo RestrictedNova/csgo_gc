@@ -3,10 +3,13 @@
 
 #include "stdafx.h"
 #include "bot_matchmaking.h"
+#include "end_of_match.h"
 #include "match_tracker.h"
 #include "platform.h"
 #include "progress.h"
 #include "reserved_server.h"
+
+#include "cstrike15_usermessages.pb.h"
 
 #include <cmath>
 #include <cstring>
@@ -150,6 +153,19 @@ static void TestXp()
     CHECK(Progress::ApplyWeeklyBonus(1000, 4000) == 500 + 875 * 2); // across a tier
     CHECK(Progress::ApplyWeeklyBonus(0, 0) == 0);
 
+    // the same split the way the end of match screen lists it: earned, the bonus on top, and
+    // earned at the reduced rate
+    Progress::WeeklyXp split = Progress::SplitWeeklyXp(480, 0);
+    CHECK(split.earned == 480 && split.bonus == 1440 && split.reduced == 0);
+    split = Progress::SplitWeeklyXp(1000, 4000);
+    CHECK(split.earned == 1000 && split.bonus == 375 + 875 && split.reduced == 0);
+    split = Progress::SplitWeeklyXp(480, 8000);
+    CHECK(split.earned == 480 && split.bonus == 0 && split.reduced == 0);
+    split = Progress::SplitWeeklyXp(480, 20000);
+    CHECK(split.earned == 0 && split.bonus == 0 && split.reduced == 84);
+    split = Progress::SplitWeeklyXp(100, 11100); // 67 at 1x, the other 33 reduced
+    CHECK(split.earned == 67 && split.bonus == 0 && split.reduced == 6);
+
     // weeks start on wednesday
     CHECK(Progress::WeekIndex(6 * Day - 1) != Progress::WeekIndex(6 * Day));
     CHECK(Progress::WeekIndex(6 * Day) == Progress::WeekIndex(13 * Day - 1));
@@ -167,6 +183,7 @@ static void TestXp()
     update = progress.ApplyMatch(Match(1, MatchOutcome::Win, 16, 8), Now);
     CHECK(update.gainedXp == 660 + 2 * (480 - 165));
     CHECK(update.oldLevel == 1 && update.newLevel == 2 && progress.Xp() == 130);
+    CHECK(update.oldXp == 3840 && update.wins == 3);
 
     // a new week has the full bonus again
     update = progress.ApplyMatch(Match(1, MatchOutcome::Win, 16, 8), Now + 7 * Day);
@@ -490,10 +507,54 @@ static void TestReservationCheck()
     CHECK(!ReservationCheck::ParseRequest(other, sizeof(other)));
 }
 
+static void TestEndOfMatch()
+{
+    // a third win at level 1 with 3840 XP: 660 earned 4x then 315 earned 2x, a level up
+    PlayerProgress progress;
+    progress.ApplyMatch(Match(1, MatchOutcome::Win, 16, 8), Now);
+    progress.ApplyMatch(Match(1, MatchOutcome::Win, 16, 8), Now);
+    const PlayerProgress::MatchUpdate update = progress.ApplyMatch(Match(1, MatchOutcome::Win, 16, 8), Now);
+
+    // the XP screen starts from the old level and XP and adds each reason
+    CCSUsrMsg_XpUpdate xp;
+    CHECK(xp.ParseFromString(EndOfMatch::XpUpdateMessage(0xb328643, update)));
+    CHECK(xp.data().account_id() == 0xb328643);
+    CHECK(xp.data().current_level() == 1 && xp.data().current_xp() == 3840);
+    CHECK(xp.data().xp_progress_data_size() == 2);
+    if (xp.data().xp_progress_data_size() == 2)
+    {
+        CHECK(xp.data().xp_progress_data(0).xp_category() == EndOfMatch::XpEarned);
+        CHECK(xp.data().xp_progress_data(0).xp_points() == 480);
+        CHECK(xp.data().xp_progress_data(1).xp_category() == EndOfMatch::XpWeeklyBonus);
+        CHECK(xp.data().xp_progress_data(1).xp_points() == 495 + 315);
+    }
+
+    // the skill group screen: no skill group yet, 3 of the 10 wins
+    CCSUsrMsg_ServerRankUpdate rank;
+    CHECK(rank.ParseFromString(EndOfMatch::RankUpdateMessage(0xb328643, RankedMode::Competitive, update)));
+    CHECK(rank.rank_update_size() == 1);
+    if (rank.rank_update_size() == 1)
+    {
+        const CCSUsrMsg_ServerRankUpdate::RankUpdate &entry = rank.rank_update(0);
+        CHECK(entry.account_id() == 0xb328643);
+        CHECK(entry.rank_old() == 0 && entry.rank_new() == 0 && entry.num_wins() == 3);
+        CHECK(entry.rank_type_id() == RankTypeCompetitive);
+    }
+
+    // a match with no rounds won lists no XP
+    const PlayerProgress::MatchUpdate lost = progress.ApplyMatch(Match(1, MatchOutcome::Loss, 0, 16), Now);
+    CHECK(xp.ParseFromString(EndOfMatch::XpUpdateMessage(0xb328643, lost)));
+    CHECK(xp.data().xp_progress_data_size() == 0 && xp.data().current_xp() == 130);
+
+    CHECK(rank.ParseFromString(EndOfMatch::RankUpdateMessage(0xb328643, RankedMode::Wingman, lost)));
+    CHECK(rank.rank_update(0).rank_type_id() == RankTypeWingman);
+}
+
 int main()
 {
     TestBotMatchmaking();
     TestReservationCheck();
+    TestEndOfMatch();
     TestRating();
     TestSkillGroups();
     TestPlacementAndExpiry();

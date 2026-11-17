@@ -93,4 +93,8 @@ struct OfficialMatchSettings
 void PrepareOfficialMatch(const OfficialMatchSettings &settings);
 void CancelOfficialMatch();
 
+// hands the client a user message (a serialized CCSUsrMsg_*) as if the server it's playing on sent
+// it, main thread only
+void DispatchUserMessage(int type, const void *data, int size);
+
 } // namespace MatchWatcher

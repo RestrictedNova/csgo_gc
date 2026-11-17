@@ -1,0 +1,31 @@
+syntax = "proto2";
+
+// the user messages from cstrike15_usermessages.proto csgo_gc sends the client itself: official
+// servers relayed these from the gc at the end of a match, the final server.dll no longer does
+
+import "cstrike15_gcmessages.proto";
+
+option cc_generic_services = false;
+option optimize_for = LITE_RUNTIME;
+
+enum ECstrike15UserMessages {
+    CS_UM_ServerRankUpdate = 52;
+    CS_UM_XpUpdate = 65;
+}
+
+message CCSUsrMsg_ServerRankUpdate {
+    message RankUpdate {
+        optional int32 account_id = 1;
+        optional int32 rank_old = 2;
+        optional int32 rank_new = 3;
+        optional int32 num_wins = 4;
+        optional float rank_change = 5;
+        optional int32 rank_type_id = 6;
+    }
+
+    repeated CCSUsrMsg_ServerRankUpdate.RankUpdate rank_update = 1;
+}
+
+message CCSUsrMsg_XpUpdate {
+    optional CMsgGCCstrike15_v2_GC2ServerNotifyXPRewarded data = 1;
+}

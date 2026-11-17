@@ -278,6 +278,10 @@ using FindVar_t = void *(__thiscall *)(void *cvar, const char *name);
 using ConVarGetInt_t = int(__thiscall *)(void *conVar);
 using ConVarSetString_t = void(__thiscall *)(void *conVar, const char *value);
 
+// IBaseClientDLL::DispatchUserMessage is virtual 38 in the final client.dll (VClient018), it's
+// what the engine hands the server's user messages to
+using DispatchUserMessage_t = bool(__thiscall *)(void *client, int type, int32_t flags, int size, const void *data);
+
 // ConVar::m_pParent, and the string value in its CVValue_t (GetInt reads m_nValue at 0x30)
 constexpr size_t ConVarParentOffset = 0x1c;
 constexpr size_t ConVarStringOffset = 0x24;
@@ -591,6 +595,25 @@ void MatchWatcher::PrepareOfficialMatch(const OfficialMatchSettings &settings)
     state.official.settings = settings;
 }
 
+void MatchWatcher::DispatchUserMessage(int type, const void *data, int size)
+{
+    static void *client;
+    if (!client)
+    {
+        HMODULE module = GetModuleHandleW(L"client.dll");
+        auto factory = module ? reinterpret_cast<CreateInterface_t>(GetProcAddress(module, "CreateInterface")) : nullptr;
+        client = factory ? factory("VClient018", nullptr) : nullptr;
+        if (!client)
+        {
+            Platform::Print("Can't get the client to show the end of match screens\n");
+            return;
+        }
+    }
+
+    // the client reports unknown and malformed messages in the console itself
+    (*reinterpret_cast<DispatchUserMessage_t **>(client))[38](client, type, 0, size, data);
+}
+
 void MatchWatcher::CancelOfficialMatch()
 {
     WatcherState &state = State();
@@ -828,6 +851,10 @@ void MatchWatcher::PrepareOfficialMatch(const OfficialMatchSettings &)
 }
 
 void MatchWatcher::CancelOfficialMatch()
+{
+}
+
+void MatchWatcher::DispatchUserMessage(int, const void *, int)
 {
 }
 

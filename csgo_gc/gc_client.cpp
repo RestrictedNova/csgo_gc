@@ -2,6 +2,7 @@
 #include "gc_client.h"
 #include "bot_matchmaking.h"
 #include "config.h"
+#include "end_of_match.h"
 #include "gc_message.h"
 #include "graffiti.h"
 #include "inventory_messages.h"
@@ -12,6 +13,7 @@
 
 #include "base_gcmessages.pb.h"
 #include "cstrike15_gcmessages.pb.h"
+#include "cstrike15_usermessages.pb.h"
 #include "econ_gcmessages.pb.h"
 #include "gcsdk_gcmessages.pb.h"
 #include "gcsystemmsgs.pb.h"
@@ -617,6 +619,16 @@ void ClientGC::OnMatchResult(const MatchResult &result)
 
     const RankType type = result.mode == RankedMode::Wingman ? RankTypeWingman : RankTypeCompetitive;
     SendRankUpdate(type, static_cast<float>(static_cast<int>(update.newRank) - static_cast<int>(update.oldRank)));
+
+    // the end of match skill group and XP screens, for a match the player is still in
+    if (!result.abandoned)
+    {
+        const std::string xpMessage = EndOfMatch::XpUpdateMessage(AccountId(), update);
+        PostToHost(HostEvent::UserMessage, CS_UM_XpUpdate, { xpMessage.begin(), xpMessage.end() });
+
+        const std::string rankMessage = EndOfMatch::RankUpdateMessage(AccountId(), result.mode, update);
+        PostToHost(HostEvent::UserMessage, CS_UM_ServerRankUpdate, { rankMessage.begin(), rankMessage.end() });
+    }
 
     const char *outcome = "lost";
     if (result.abandoned)
