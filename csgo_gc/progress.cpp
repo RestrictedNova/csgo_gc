@@ -117,6 +117,18 @@ RankId SkillGroupForRating(double rating)
     return static_cast<RankId>(group);
 }
 
+double SkillGroupFloor(RankId group)
+{
+    const double width = SkillGroupFloors[1] - SkillGroupFloors[0];
+    const int index = static_cast<int>(group) - static_cast<int>(RankSilver2);
+    if (index < 0)
+    {
+        return SkillGroupFloors[0] - width;
+    }
+
+    return SkillGroupFloors[std::min(index, static_cast<int>(std::size(SkillGroupFloors)) - 1)];
+}
+
 RankId VisibleSkillGroup(const SkillRating &skill, uint32_t now)
 {
     if (skill.wins < WinsForSkillGroup)
@@ -317,7 +329,7 @@ PlayerProgress::MatchUpdate PlayerProgress::ApplyMatch(const MatchResult &result
         score = 0.5;
     }
 
-    const double botRating = Progress::BotRating(result.botDifficulty);
+    const double botRating = result.botRating > 0 ? result.botRating : Progress::BotRating(result.botDifficulty);
     Progress::UpdateRating(skill, botRating, Progress::BotDeviation, score);
     if (score > 0)
     {

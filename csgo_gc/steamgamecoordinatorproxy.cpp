@@ -232,7 +232,9 @@ void SteamGameCoordinatorProxyClient::RunFrame()
             {
                 MatchWatcher::OfficialMatchSettings settings;
                 settings.reservation = fields[0];
-                FromString(fields[1], settings.botDifficulty);
+                uint32_t tier = settings.botTier;
+                FromString(fields[1], tier);
+                settings.botTier = static_cast<RankId>(std::clamp<uint32_t>(tier, RankSilver1, RankGlobalElite));
                 FromString(fields[2], settings.players);
                 settings.shortMatch = fields[3] == "1";
                 MatchWatcher::PrepareOfficialMatch(settings);

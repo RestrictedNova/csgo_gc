@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "gc_client.h"
 #include "bot_matchmaking.h"
+#include "bot_profiles.h"
 #include "config.h"
 #include "end_of_match.h"
 #include "gc_message.h"
@@ -586,9 +587,6 @@ void ClientGC::SetLevel(int level, int xp)
     SendPlayerLevel();
 }
 
-// FIXME: false once Official Matchmaking against bots is tested, real CS:GO never counted practice
-constexpr bool PracticeMatchesCount = true;
-
 void ClientGC::OnMatchResult(const MatchResult &result)
 {
     if (!GetConfig().m_rankProgress)
@@ -596,21 +594,22 @@ void ClientGC::OnMatchResult(const MatchResult &result)
         return;
     }
 
-    const bool official = m_officialMatch.pending && m_officialMatch.mode == result.mode;
-    if (official)
-    {
-        m_officialMatch.pending = false;
-    }
-    else if (!PracticeMatchesCount)
+    // like real CS:GO, practice with bots earns nothing
+    if (!m_officialMatch.pending || m_officialMatch.mode != result.mode)
     {
         Platform::Print("Practice match against bots ended, only Official Matchmaking counts\n");
         return;
     }
 
-    Platform::Print("{} match ended\n", official ? "Official Matchmaking" : "Practice");
+    m_officialMatch.pending = false;
+    Platform::Print("Official Matchmaking match ended\n");
+
+    // the bots were players of a skill group
+    MatchResult rated = result;
+    rated.botRating = BotProfiles::TierRating(m_officialMatch.botTier);
 
     const uint32_t now = static_cast<uint32_t>(time(nullptr));
-    const PlayerProgress::MatchUpdate update = m_progress.ApplyMatch(result, now);
+    const PlayerProgress::MatchUpdate update = m_progress.ApplyMatch(rated, now);
     m_progress.Save();
 
     m_level = m_progress.Level();
@@ -645,9 +644,9 @@ void ClientGC::OnMatchResult(const MatchResult &result)
     }
 
     const SkillRating &skill = m_progress.Skill(result.mode);
-    Platform::Print("{} {} match {}-{} against bot difficulty {} ({} kills, {} deaths, {} MVPs)\n",
-        result.mode == RankedMode::Wingman ? "Wingman" : "Competitive", outcome,
-        result.roundsWon, result.roundsLost, result.botDifficulty, result.kills, result.deaths, result.mvps);
+    Platform::Print("{} {} match {}-{} against {} bots ({} kills, {} deaths, {} MVPs)\n",
+        result.mode == RankedMode::Wingman ? "Wingman" : "Competitive", outcome, result.roundsWon, result.roundsLost,
+        BotProfiles::TierName(m_officialMatch.botTier), result.kills, result.deaths, result.mvps);
     Platform::Print("Rating {:.0f} -> {:.0f}, skill group {} -> {}, {}/{} wins for a skill group\n",
         update.oldRating, update.newRating, FromEnum(update.oldRank), FromEnum(update.newRank),
         std::min(skill.wins, Progress::WinsForSkillGroup), Progress::WinsForSkillGroup);
@@ -762,7 +761,8 @@ void ClientGC::MatchmakingTick()
 
     m_search.searching = false;
 
-    const int botDifficulty = BotMatchmaking::BotDifficultyFor(m_progress.Skill(m_search.mode).rating);
+    // bots playing like players of your own skill group, for a match as even as matchmaking's
+    const RankId botTier = BotProfiles::TierFor(m_progress.Skill(m_search.mode).rating);
     const std::string map = Random::Select(m_search.maps);
     const uint64_t reservationId = (static_cast<uint64_t>(Random::Uint32()) << 32) | Random::Uint32(1);
 
@@ -770,7 +770,7 @@ void ClientGC::MatchmakingTick()
     m_officialMatch.started = false;
     m_officialMatch.mode = m_search.mode;
     m_officialMatch.map = map;
-    m_officialMatch.botDifficulty = botDifficulty;
+    m_officialMatch.botTier = botTier;
     m_officialMatch.expires = now + std::chrono::minutes{ 5 };
 
     // accepting starts the map here, the game makes it an official matchmaking server with this
@@ -778,7 +778,7 @@ void ClientGC::MatchmakingTick()
     const int players = BotMatchmaking::PlayerCount(m_search.mode);
     const std::string reservationText = BotMatchmaking::Reservation(reservationId, AccountId(), m_search.mode,
         static_cast<int>(Random::Uint32(0, static_cast<uint32_t>(players - 1))));
-    const std::string prepare = reservationText + '\n' + std::to_string(botDifficulty) + '\n'
+    const std::string prepare = reservationText + '\n' + std::to_string(FromEnum(botTier)) + '\n'
         + std::to_string(players) + '\n' + (m_search.shortMatch ? "1" : "0");
     PostToHost(HostEvent::PrepareOfficialMatch, 0, { prepare.begin(), prepare.end() });
 
@@ -810,9 +810,9 @@ void ClientGC::MatchmakingTick()
 
     SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
 
-    Platform::Print("Match found: {}{} on {} against bot difficulty {}\n",
+    Platform::Print("Match found: {}{} on {} against {} bots\n",
         m_search.mode == RankedMode::Wingman ? "wingman" : "competitive", m_search.shortMatch ? " (short)" : "",
-        map, botDifficulty);
+        map, BotProfiles::TierName(botTier));
 }
 
 void ClientGC::SendPlayerLevel()

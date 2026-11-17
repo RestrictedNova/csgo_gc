@@ -21,10 +21,6 @@ constexpr uint32_t FlagsAnyLength = FlagsLongMatch | FlagsShortMatch;
 // mode's active maps when none are
 std::vector<std::string> MapsFromGameType(uint32_t gameType, RankedMode mode);
 
-// matchmaking finds opponents near your skill: the difficulty whose bots are closest to a bit
-// below your rating, so you win most matches but not all of them
-int BotDifficultyFor(double rating);
-
 // players in a match: 10 in competitive, 4 in wingman
 int PlayerCount(RankedMode mode);
 

@@ -6,7 +6,7 @@ enum class HostEvent
     NetMessage, // id contains the recipient steam id, buffer contains the payload
     MicroTransactionResponse, // runs MicroTxnAuthorizationResponse_t, no arguments
     CloseChannel, // id contains the steam id
-    PrepareOfficialMatch, // buffer contains the reservation, bot difficulty, player count and short match (0/1), one per line. empty cancels
+    PrepareOfficialMatch, // buffer contains the reservation, the bots' skill group (RankId), player count and short match (0/1), one per line. empty cancels
     UserMessage, // id contains the user message type, buffer contains the message, for the client like a server would send it
 };
 

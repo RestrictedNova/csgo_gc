@@ -1,8 +1,6 @@
 #include "stdafx.h"
 #include "bot_matchmaking.h"
 
-#include <cmath>
-
 namespace BotMatchmaking
 {
 
@@ -104,24 +102,6 @@ std::vector<std::string> MapsFromGameType(uint32_t gameType, RankedMode mode)
     }
 
     return maps;
-}
-
-int BotDifficultyFor(double rating)
-{
-    // about a 70% chance to win against bots this far below you
-    constexpr double Margin = 150;
-    const double target = rating - Margin;
-
-    int best = 0;
-    for (int difficulty = 1; difficulty < 4; difficulty++)
-    {
-        if (std::fabs(Progress::BotRating(difficulty) - target) < std::fabs(Progress::BotRating(best) - target))
-        {
-            best = difficulty;
-        }
-    }
-
-    return best;
 }
 
 int PlayerCount(RankedMode mode)

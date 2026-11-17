@@ -155,7 +155,7 @@ private:
         bool started{ false }; // the official matchmaking server is up, so no expiring
         RankedMode mode{ RankedMode::Competitive };
         std::string map;
-        int botDifficulty{ 0 };
+        RankId botTier{ RankGoldNova2 }; // the skill group the bots play like
         std::chrono::steady_clock::time_point expires; // to accept and load the map
     };
 

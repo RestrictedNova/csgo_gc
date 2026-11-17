@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "match_tracker.h"
+#include "bot_profiles.h"
 #include "config.h"
 #include "gc_shared.h"
 
@@ -11,12 +12,6 @@ constexpr int TeamCounterTerrorist = 3;
 static const char *ModeName(RankedMode mode)
 {
     return mode == RankedMode::Wingman ? "wingman" : "competitive";
-}
-
-static const char *BotDifficultyName(int difficulty)
-{
-    constexpr const char *Names[] = { "easy", "normal", "hard", "expert" };
-    return Names[std::clamp(difficulty, 0, 3)];
 }
 
 std::optional<RankedMode> MatchTracker::RankedModeFor(const MatchSettings &settings)
@@ -98,7 +93,7 @@ std::optional<MatchResult> MatchTracker::OnEvent(const MatchEvent &event, const 
 
         if (m_live)
         {
-            Platform::Print("Ranked {} match against {} bots started\n", ModeName(m_mode), BotDifficultyName(m_settings.botDifficulty));
+            Platform::Print("Ranked {} match started\n", ModeName(m_mode));
         }
 
         return std::nullopt;
@@ -163,6 +158,7 @@ std::optional<MatchResult> MatchTracker::OnServerGone()
     m_players.clear();
     return result;
 }
+
 
 std::optional<int> MatchTracker::HumanUserId() const
 {
@@ -427,7 +423,6 @@ void EventListener::FireGameEvent(EngineGameEvent *event)
     {
         state.humanOnTeam = true;
     }
-
     PostResult(state, state.tracker.OnEvent(matchEvent, readSettings));
 }
 
@@ -498,10 +493,163 @@ static void OnNewServer(WatcherState &state, bool resetPlayers = true)
     }
 }
 
-// what official servers did with a reservation, worked out with dev_commands: the reservation
-// set once the player is in (set before, the server waits for players forever), the
-// competitive config's own bot kicked so every bot gets the difficulty matchmaking picked,
-// then joingame and jointeam, which the server answers with the player's reserved team
+// server.dll's code and data, empty when it isn't loaded
+static std::string_view ServerImage()
+{
+    const auto base = reinterpret_cast<const uint8_t *>(GetModuleHandleW(L"server.dll"));
+    if (!base)
+    {
+        return {};
+    }
+
+    const auto dosHeader = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
+    const auto ntHeaders = reinterpret_cast<const IMAGE_NT_HEADERS *>(base + dosHeader->e_lfanew);
+    return { reinterpret_cast<const char *>(base), ntHeaders->OptionalHeader.SizeOfImage };
+}
+
+// official servers only had bots in the places of players who left, and always easy ones:
+// server.dll's pick of a bot's difficulty (for bots joining and the difficulty adjustment) is
+// easy whenever sv_mmqueue_reservation is set. csgo_gc's official matches are played against
+// bots, so they use bot_difficulty like any other server: the check of the reservation's 'Q'
+// jumps past whatever it says. Only servers on this machine run this server.dll, and only
+// csgo_gc makes them official
+static bool UseBotDifficultyInOfficialMatches()
+{
+    static bool patched;
+    if (patched)
+    {
+        return true;
+    }
+
+    // cmp byte ptr [eax], 'Q'; jne <bot_difficulty>; cmp dword ptr [<game rules>], 0; je ...;
+    // mov ecx, [<game types>]; mov eax, [ecx]; call [eax + 0x20]; cmp eax, 4; je ...; xor eax, eax
+    constexpr std::string_view Check{ "\x80\x38\x51\x75\x1f\x83\x3d", 7 };
+    constexpr std::string_view After{ "\x8b\x01\xff\x50\x20\x83\xf8\x04\x74\x06\x33\xc0", 12 };
+    const std::string_view image = ServerImage();
+    const size_t check = image.find(Check);
+    if (check == std::string_view::npos || image.substr(check + 20, After.size()) != After)
+    {
+        return false;
+    }
+
+    // jne -> jmp
+    auto jump = const_cast<char *>(image.data() + check + 3);
+    DWORD protection;
+    if (!VirtualProtect(jump, 1, PAGE_EXECUTE_READWRITE, &protection))
+    {
+        return false;
+    }
+
+    *jump = '\xeb';
+    VirtualProtect(jump, 1, protection, &protection);
+    FlushInstructionCache(GetCurrentProcess(), jump, 1);
+
+    patched = true;
+    return true;
+}
+
+// server.dll's bot manager loads the bot profiles whenever a map starts, from BotProfile.db (when
+// no BotPackList.db lists others). An official match's map loads csgo_gc's bots for the player's
+// skill group instead: the name it pushes points at csgo_gc's file for that one map
+class ProfileDatabaseSwitch
+{
+public:
+    // writes the tier's bots and points the next map's bot manager at them
+    bool Use(RankId tier)
+    {
+        uint32_t *operand = Operand();
+        if (!operand)
+        {
+            return false;
+        }
+
+        char path[MAX_PATH];
+        if (!GetFullPathNameA("csgo_gc\\bot_profiles.db", sizeof(path), path, nullptr))
+        {
+            return false;
+        }
+
+        FILE *f = fopen(path, "wb");
+        if (!f)
+        {
+            return false;
+        }
+
+        const std::string database = BotProfiles::Database(tier);
+        fwrite(database.data(), 1, database.size(), f);
+        fclose(f);
+
+        m_path = path;
+        Write(operand, static_cast<uint32_t>(reinterpret_cast<uintptr_t>(m_path.c_str())));
+        return true;
+    }
+
+    // Valve's bots again, for the maps after
+    void Restore()
+    {
+        if (m_operand && m_original)
+        {
+            Write(m_operand, m_original);
+        }
+    }
+
+private:
+    // the operand of push "BotProfile.db" in the bot manager (push ecx; push <name>; call)
+    uint32_t *Operand()
+    {
+        if (m_operand)
+        {
+            return m_operand;
+        }
+
+        const std::string_view image = ServerImage();
+        const size_t name = image.find(std::string_view{ "BotProfile.db", sizeof("BotProfile.db") });
+        if (name == std::string_view::npos)
+        {
+            return nullptr;
+        }
+
+        const uint32_t address = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(image.data()) + name);
+        char push[7] = { '\x51', '\x68', 0, 0, 0, 0, '\xe8' };
+        memcpy(push + 2, &address, sizeof(address));
+        const size_t use = image.find(std::string_view{ push, sizeof(push) });
+        if (use == std::string_view::npos)
+        {
+            return nullptr;
+        }
+
+        m_operand = reinterpret_cast<uint32_t *>(const_cast<char *>(image.data() + use + 2));
+        m_original = address;
+        return m_operand;
+    }
+
+    static void Write(uint32_t *operand, uint32_t value)
+    {
+        DWORD protection;
+        if (VirtualProtect(operand, sizeof(*operand), PAGE_EXECUTE_READWRITE, &protection))
+        {
+            *operand = value;
+            VirtualProtect(operand, sizeof(*operand), protection, &protection);
+            FlushInstructionCache(GetCurrentProcess(), operand, sizeof(*operand));
+        }
+    }
+
+    uint32_t *m_operand{};
+    uint32_t m_original{};
+    std::string m_path; // the code points at it while switched
+};
+
+static ProfileDatabaseSwitch &ProfileDatabase()
+{
+    static ProfileDatabaseSwitch *profiles = new ProfileDatabaseSwitch; // never freed, like the state
+    return *profiles;
+}
+
+// what official servers did with a reservation, worked out with dev_commands and server.dll: the
+// reservation set as soon as the server's up, before the player's in (set before the map loads,
+// the server waits for the reserved players forever), the competitive config's own bot kicked so
+// every bot gets the difficulty matchmaking picked, then joingame, which the server answers by
+// putting the player on their reserved team
 static void UpdateOfficialMatch(WatcherState &state)
 {
     using Stage = WatcherState::OfficialMatch::Stage;
@@ -525,15 +673,18 @@ static void UpdateOfficialMatch(WatcherState &state)
 
     if (match.stage == Stage::WaitingForServer)
     {
-        // in case the player was in before we were listening
-        if (!connected && now < state.serverStarted + std::chrono::seconds{ 15 })
+        // before the reservation makes the bots joining below easy ones
+        if (!UseBotDifficultyInOfficialMatches())
         {
-            return;
+            Platform::Print("Can't give official matches' bots their difficulty in this server.dll, they'll be easy\n");
         }
 
         const std::string warmup = MatchWatcher::GetGameSetting("mp_warmuptime_all_players_connected");
         MatchWatcher::SetGameSetting(ReservationConVar, match.settings.reservation.c_str());
-        MatchWatcher::SetGameSetting("bot_difficulty", std::to_string(match.settings.botDifficulty).c_str());
+        // the map loaded csgo_gc's bots for the player's skill group, all of them expert ones. maps
+        // after this one get Valve's again
+        ProfileDatabase().Restore();
+        MatchWatcher::SetGameSetting("bot_difficulty", "3");
         MatchWatcher::SetGameSetting("sv_auto_adjust_bot_difficulty", "0");
         RunConsoleCommand("bot_kick");
         MatchWatcher::SetGameSetting("bot_quota_mode", "fill");
@@ -552,7 +703,7 @@ static void UpdateOfficialMatch(WatcherState &state)
 
         match.stage = Stage::Joining;
         match.joinAttempts = 0;
-        match.nextStep = now + std::chrono::seconds{ 3 };
+        match.nextStep = {};
 
         std::lock_guard lock{ state.mutex };
         if (state.gc)
@@ -563,19 +714,23 @@ static void UpdateOfficialMatch(WatcherState &state)
         return;
     }
 
-    // Stage::Joining. joining too soon after connecting doesn't work, so keep trying
+    // Stage::Joining. a player who sends joingame with the reservation in place goes straight onto
+    // their reserved team, without the team menu. the client only sends it by itself when
+    // matchmaking connected it, so send it as soon as the player's in, and keep at it until the
+    // server takes it (it ignores joingame until the player's at the welcome stage)
     if (onTeam)
     {
         match.stage = Stage::Playing;
         return;
     }
 
-    if (now < match.nextStep)
+    if (!connected || now < match.nextStep)
     {
         return;
     }
 
-    if (match.joinAttempts++ >= 10)
+    constexpr int MaxJoinAttempts = 60; // 15 seconds
+    if (match.joinAttempts++ >= MaxJoinAttempts)
     {
         Platform::Print("Couldn't get onto a team in the official match\n");
         match.stage = Stage::Playing;
@@ -583,8 +738,7 @@ static void UpdateOfficialMatch(WatcherState &state)
     }
 
     RunConsoleCommand("joingame");
-    RunConsoleCommand("jointeam 3 1");
-    match.nextStep = now + std::chrono::seconds{ 3 };
+    match.nextStep = now + std::chrono::milliseconds{ 250 };
 }
 
 void MatchWatcher::PrepareOfficialMatch(const OfficialMatchSettings &settings)
@@ -593,6 +747,12 @@ void MatchWatcher::PrepareOfficialMatch(const OfficialMatchSettings &settings)
     state.official.stage = WatcherState::OfficialMatch::Stage::WaitingForServer;
     state.official.afterGeneration = state.serverGeneration;
     state.official.settings = settings;
+
+    // the map accepting the match starts loads bots of the player's skill group
+    if (!ProfileDatabase().Use(settings.botTier))
+    {
+        Platform::Print("Can't give the match bots of your skill group in this server.dll, it'll have Valve's\n");
+    }
 }
 
 void MatchWatcher::DispatchUserMessage(int type, const void *data, int size)
@@ -620,6 +780,7 @@ void MatchWatcher::CancelOfficialMatch()
     if (state.official.stage == WatcherState::OfficialMatch::Stage::WaitingForServer)
     {
         state.official.stage = WatcherState::OfficialMatch::Stage::None;
+        ProfileDatabase().Restore();
     }
 }
 
@@ -833,9 +994,9 @@ static void RunDevCommands()
         {
             WatcherState &state = State();
             std::lock_guard lock{ state.mutex };
-            Platform::Print("dev: listening {}, server generation {}, official stage {} after generation {}, human connected {}, on team {}\n",
+            Platform::Print("dev: listening {}, server generation {}, official stage {} after generation {}, human connected {}, on team {}, bot tier {}\n",
                 state.listening, state.serverGeneration, FromEnum(state.official.stage), state.official.afterGeneration,
-                state.humanConnected, state.humanOnTeam);
+                state.humanConnected, state.humanOnTeam, FromEnum(state.official.settings.botTier));
         }
         else
         {

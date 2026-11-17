@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "bot_matchmaking.h"
+#include "bot_profiles.h"
 #include "end_of_match.h"
 #include "match_tracker.h"
 #include "platform.h"
@@ -13,6 +14,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <set>
 #include <cstdio>
 #include <map>
 
@@ -446,12 +448,6 @@ static void TestBotMatchmaking()
     maps = BotMatchmaking::MapsFromGameType((0x20000 << 8) | 8, RankedMode::Wingman);
     CHECK(std::ranges::count(maps, "de_shortdust") == 1);
 
-    // bots a bit below your skill: a new account gets normal bots, the best get expert
-    CHECK(BotMatchmaking::BotDifficultyFor(1500) == 1);
-    CHECK(BotMatchmaking::BotDifficultyFor(900) == 0);
-    CHECK(BotMatchmaking::BotDifficultyFor(1750) == 2);
-    CHECK(BotMatchmaking::BotDifficultyFor(2300) == 3);
-
     // the reservation the game was tested with: the player's account id in hex at their place,
     // made up ones for the bots, half the list on each team
     CHECK(BotMatchmaking::Reservation(0x5f3a9c21, 0xb328643, RankedMode::Competitive, 7)
@@ -507,6 +503,75 @@ static void TestReservationCheck()
     CHECK(!ReservationCheck::ParseRequest(other, sizeof(other)));
 }
 
+static void TestBotProfiles()
+{
+    // matchmaking finds bots of your own skill group: a new account gold nova II ones
+    CHECK(BotProfiles::TierFor(1500) == RankGoldNova2);
+    CHECK(BotProfiles::TierFor(900) == RankSilver1);
+    CHECK(BotProfiles::TierFor(1871) == RankMasterGuardian2);
+    CHECK(BotProfiles::TierFor(2600) == RankGlobalElite);
+
+    // and they count as the middle of it
+    CHECK(BotProfiles::TierRating(RankGoldNova2) == 1540);
+    CHECK(BotProfiles::TierRating(RankSilver1) == 980);
+    CHECK(BotProfiles::TierRating(RankGlobalElite) == 2340);
+    CHECK(BotProfiles::TierFor(BotProfiles::TierRating(RankLegendaryEagle)) == RankLegendaryEagle);
+
+    // the ladder of players' times to damage: silver I slowest, the global elite fastest
+    CHECK(BotProfiles::Strength(RankSilver1) == 0 && BotProfiles::Strength(RankGlobalElite) == 1);
+    CHECK(BotProfiles::TierName(RankMasterGuardianElite) == "Master Guardian Elite");
+
+    // every skill group's bots better than the one below, at everything
+    for (uint32_t tier = RankSilver2; tier <= RankGlobalElite; tier++)
+    {
+        const BotProfiles::Settings lower = BotProfiles::SettingsFor(static_cast<RankId>(tier - 1));
+        const BotProfiles::Settings higher = BotProfiles::SettingsFor(static_cast<RankId>(tier));
+        CHECK(BotProfiles::TimeToDamage(static_cast<RankId>(tier)) < BotProfiles::TimeToDamage(static_cast<RankId>(tier - 1)));
+        CHECK(higher.reactionTime < lower.reactionTime);
+        CHECK(higher.attackDelay < lower.attackDelay);
+        CHECK(higher.aimFocusInitial < lower.aimFocusInitial);
+        CHECK(higher.aimFocusOffsetScale < lower.aimFocusOffsetScale);
+        CHECK(higher.skill >= lower.skill);
+    }
+
+    // silver I about Valve's normal bots, the global elite about its elite ones
+    const BotProfiles::Settings silver = BotProfiles::SettingsFor(RankSilver1);
+    const BotProfiles::Settings global = BotProfiles::SettingsFor(RankGlobalElite);
+    CHECK(std::fabs(silver.reactionTime - 0.45) < 1e-9 && std::fabs(global.reactionTime - 0.06) < 1e-9);
+    CHECK(std::fabs(global.aimFocusInitial - 0.5) < 1e-9 && global.skill == 100);
+
+    // a database in botprofile.db's format: Valve's default and weapons, the skill group's
+    // template and 24 expert bots with different names
+    const std::string database = BotProfiles::Database(RankMasterGuardian2);
+    auto count = [&database](std::string_view text)
+    {
+        size_t n = 0;
+        for (size_t at = database.find(text); at != std::string::npos; at = database.find(text, at + 1))
+        {
+            n++;
+        }
+
+        return n;
+    };
+
+    CHECK(database.starts_with("//"));
+    CHECK(count("\nDefault\n") == 1 && count("Template Rifle\n") == 1 && count("Template Sniper\n") == 1);
+    CHECK(count("Template Tier\n") == 1 && count("\tDifficulty = EXPERT\n") == 1);
+    CHECK(count("\nTier+") == 24);
+    CHECK(count("\nEnd\n") == count("\nTier+") + 9); // default, 7 weapons, the tier
+    CHECK(count("\nTier+Sniper ") == 3);
+
+    std::set<std::string> names;
+    for (size_t at = database.find("\nTier+"); at != std::string::npos; at = database.find("\nTier+", at + 1))
+    {
+        const size_t space = database.find(' ', at);
+        names.insert(database.substr(space + 1, database.find('\n', space) - space - 1));
+    }
+
+    CHECK(names.size() == 24);
+    CHECK(BotProfiles::Database(RankSilver1) != BotProfiles::Database(RankGlobalElite));
+}
+
 static void TestEndOfMatch()
 {
     // a third win at level 1 with 3840 XP: 660 earned 4x then 315 earned 2x, a level up
@@ -554,6 +619,7 @@ int main()
 {
     TestBotMatchmaking();
     TestReservationCheck();
+    TestBotProfiles();
     TestEndOfMatch();
     TestRating();
     TestSkillGroups();

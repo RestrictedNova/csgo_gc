@@ -25,6 +25,7 @@ struct MatchResult
 {
     RankedMode mode{ RankedMode::Competitive };
     int botDifficulty{ 0 }; // bot_difficulty: 0 easy, 1 normal, 2 hard, 3 expert
+    double botRating{ 0 }; // what the bots count as in the rating, 0 for Progress::BotRating(botDifficulty)
     MatchOutcome outcome{ MatchOutcome::Loss };
     bool abandoned{ false }; // left before the end, a loss without XP like real matchmaking
     int roundsWon{ 0 };
@@ -52,7 +53,7 @@ constexpr int XpPerLevel = 5000;
 constexpr int MaxLevel = 40;
 constexpr uint32_t SkillGroupExpiry = 30 * 24 * 60 * 60;
 
-// the rating and deviation bots of a difficulty play at
+// the rating and deviation Valve's bots of a difficulty play at
 double BotRating(int botDifficulty);
 constexpr double BotDeviation = 50;
 
@@ -61,6 +62,9 @@ void UpdateRating(SkillRating &skill, double opponentRating, double opponentDevi
 
 // the skill group a rating shows as, ignoring wins and expiry
 RankId SkillGroupForRating(double rating);
+
+// the lowest rating of a skill group (silver I's as wide as the rest)
+double SkillGroupFloor(RankId group);
 
 // what the client should show: nothing before 10 wins or after 30 days without one
 RankId VisibleSkillGroup(const SkillRating &skill, uint32_t now);
