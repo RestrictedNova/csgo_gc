@@ -270,6 +270,9 @@ public:
 
 using CreateInterface_t = void *(__cdecl *)(const char *name, int *returnCode);
 
+// IVEngineClient::ExecuteClientCmd is virtual 108, it runs the command right away
+using ExecuteClientCmd_t = void(__thiscall *)(void *engineClient, const char *command);
+
 // ICvar::FindVar is virtual 16, ConVar::GetInt and SetValue(const char *) are 13 and 14
 using FindVar_t = void *(__thiscall *)(void *cvar, const char *name);
 using ConVarGetInt_t = int(__thiscall *)(void *conVar);
@@ -306,6 +309,7 @@ struct WatcherState
 
     EngineEventManager *events{};
     void *cvar{};
+    void *engineClient{};
     bool triedInterfaces{};
     bool listening{};
 };
@@ -384,13 +388,21 @@ bool GetInterfaces(WatcherState &state)
 
     state.events = static_cast<EngineEventManager *>(engineFactory("GAMEEVENTSMANAGER002", nullptr));
     state.cvar = vstdlibFactory("VEngineCvar007", nullptr);
+    state.engineClient = engineFactory("VEngineClient014", nullptr);
     return state.events && state.cvar;
 }
 
 } // namespace
 
+static void RunDevCommands();
+
 void MatchWatcher::Update(SharedGC &gc)
 {
+    if (GetConfig().m_devCommands)
+    {
+        RunDevCommands();
+    }
+
     if (!GetConfig().m_rankProgress)
     {
         return;
@@ -484,6 +496,85 @@ void MatchWatcher::SetGameSetting(const char *name, const char *value)
     if (conVar)
     {
         (*reinterpret_cast<ConVarSetString_t **>(conVar))[14](conVar, value);
+    }
+}
+
+static void RunDevCommands()
+{
+    constexpr const char *Path = "csgo_gc/dev_commands.txt";
+
+    static auto nextCheck = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    if (now < nextCheck)
+    {
+        return;
+    }
+
+    nextCheck = now + std::chrono::milliseconds{ 500 };
+
+    FILE *f = fopen(Path, "rb");
+    if (!f)
+    {
+        return;
+    }
+
+    std::string text;
+    char buffer[4096];
+    size_t read;
+    while ((read = fread(buffer, 1, sizeof(buffer), f)) > 0)
+    {
+        text.append(buffer, read);
+    }
+
+    fclose(f);
+    Platform::RemoveFile(Path);
+
+    std::string_view rest = text;
+    while (!rest.empty())
+    {
+        const size_t end = rest.find('\n');
+        std::string line{ rest.substr(0, end) };
+        rest = end == std::string_view::npos ? std::string_view{} : rest.substr(end + 1);
+
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+        {
+            line.pop_back();
+        }
+
+        if (line.empty() || line[0] == '#')
+        {
+            continue;
+        }
+
+        const size_t space = line.find(' ');
+        const std::string verb = line.substr(0, space);
+        const std::string argument = space == std::string::npos ? std::string{} : line.substr(space + 1);
+
+        if (verb == "cmd")
+        {
+            WatcherState &state = State();
+            if (state.engineClient)
+            {
+                Platform::Print("dev: running \"{}\"\n", argument);
+                (*reinterpret_cast<ExecuteClientCmd_t **>(state.engineClient))[108](state.engineClient, argument.c_str());
+            }
+        }
+        else if (verb == "set" || verb == "get")
+        {
+            const size_t nameEnd = argument.find(' ');
+            const std::string name = argument.substr(0, nameEnd);
+            if (verb == "set")
+            {
+                MatchWatcher::SetGameSetting(name.c_str(), nameEnd == std::string::npos ? "" : argument.c_str() + nameEnd + 1);
+            }
+
+            Platform::Print("dev: {} = \"{}\"{}\n", name, MatchWatcher::GetGameSetting(name.c_str()),
+                FindConVar(name.c_str()) ? "" : " (no such convar)");
+        }
+        else
+        {
+            Platform::Print("dev: unknown command \"{}\"\n", line);
+        }
     }
 }
 

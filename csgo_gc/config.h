@@ -51,6 +51,10 @@ public:
     // instead of the fixed ranks, player_level and player_cur_xp here
     bool m_rankProgress{ false };
 
+    // for working out how the game works: runs the lines of csgo_gc/dev_commands.txt in the game
+    // ("set <convar> <value>", "get <convar>", "cmd <console command>"), then deletes the file
+    bool m_devCommands{ false };
+
     bool m_vacBanned{ false };
     int m_commendedFriendly{ 0 };
     int m_commendedTeaching{ 0 };
