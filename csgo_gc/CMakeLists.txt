@@ -23,6 +23,7 @@ FetchContent_MakeAvailable(funchook)
 
 add_library(csgo_gc STATIC
     appid.cpp
+    bot_matchmaking.cpp
     case_opening.cpp
     config.cpp
     gc_client.cpp

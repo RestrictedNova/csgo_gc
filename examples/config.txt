@@ -62,8 +62,9 @@
 // popup from the main menu (windows only for now)
 "restore_disabled_ui"	"1"
 
-// earn your level, XP and skill groups by playing competitive and wingman against bots
-// (Practice with bots), saved to csgo_gc/progress.txt. replaces "ranks", "player_level" and
-// "player_cur_xp" above, and a new progress file starts like a new account: level 1, no
-// skill groups. harder bots let you climb higher (windows only for now)
+// earn your level, XP and skill groups in competitive and wingman against bots, saved to
+// csgo_gc/progress.txt. brings Official Matchmaking back to the play menu: Go searches, the
+// accept popup starts a match against bots picked for your skill. replaces "ranks",
+// "player_level" and "player_cur_xp" above, and a new progress file starts like a new
+// account: level 1, no skill groups (windows only for now)
 "rank_progress"	"0"

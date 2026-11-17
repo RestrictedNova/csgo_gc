@@ -6,12 +6,20 @@
 namespace UIPatches
 {
 
-// a run of code to find, pieces separated by any whitespace (unused pieces left empty).
-// the last piece gets removed
+enum class PatchAction
+{
+    Remove, // the last piece
+    InsertBefore, // text in front of the last piece
+};
+
+// a run of code to find, pieces separated by any whitespace (unused pieces left empty)
 struct ScriptPatch
 {
     std::string_view name;
     std::array<std::string_view, 3> pieces;
+    unsigned group{ PatchGroupDisabledUI };
+    PatchAction action{ PatchAction::Remove };
+    std::string_view text{};
 
     constexpr size_t Count() const
     {
@@ -24,6 +32,41 @@ struct ScriptPatch
         return count;
     }
 };
+
+// the "Official Matchmaking" entry the final build commented out of the play menu's dropdown
+constexpr std::string_view OfficialMatchmakingEntry = R"js(
+	var elCsgoGcPlayType = $( '#PlayTopNavDropdown' );
+	if ( elCsgoGcPlayType && !elCsgoGcPlayType.FindChildTraverse( 'Play-official' ) )
+	{
+		var elCsgoGcOfficial = $.CreatePanel( 'Label', elCsgoGcPlayType, 'Play-official' );
+		elCsgoGcOfficial.text = $.Localize( '#play_setting_online' );
+		elCsgoGcOfficial.SetAttributeString( 'data-type', 'official' );
+		elCsgoGcPlayType.AddOption( elCsgoGcOfficial );
+	}
+	)js";
+
+// csgo_gc has no matchmaking servers: accepting a match found by Official Matchmaking starts it
+// against bots on this machine, the way Practice with bots does, on the map the gc picked and
+// with the bot difficulty it lent player_botdifflast_s
+constexpr std::string_view AcceptStartsBotMatch = R"js(
+		if ( m_lobbySettings && m_lobbySettings.options && m_lobbySettings.options.server === 'official' )
+		{
+			$.Schedule( 1.5, function()
+			{
+				var oCsgoGcSettings = LobbyAPI.GetSessionSettings();
+				var strCsgoGcMap = ( oCsgoGcSettings && oCsgoGcSettings.game && oCsgoGcSettings.game.map ) ? oCsgoGcSettings.game.map : '';
+				LobbyAPI.StopMatchmaking();
+				$.DispatchEvent( 'CloseAcceptPopup' );
+				$.DispatchEvent( 'UIPopupButtonClicked', '' );
+				LobbyAPI.UpdateSessionSettings( { update: { Options: { action: 'custommatch', server: 'listen' }, Game: { mapgroupname: 'mg_' + strCsgoGcMap, map: strCsgoGcMap } } } );
+				$.Schedule( 0.5, function()
+				{
+					GameTypesAPI.SetCustomBotDifficulty( GameInterfaceAPI.GetSettingString( 'player_botdifflast_s' ) );
+					LobbyAPI.StartMatchmaking( '', '', '', '' );
+				} );
+			} );
+		}
+		)js";
 
 constexpr ScriptPatch Patches[] = {
     // early returns Valve added in front of the original code in playercard.js
@@ -40,6 +83,22 @@ constexpr ScriptPatch Patches[] = {
     {
         "main menu without the legacy version popup",
         { "_GcLogonNotificationReceived();", "_ShowLegacyVersionWarning();" },
+    },
+
+    // Official Matchmaking against bots (rank_progress), in mainmenu_play.js and popup_accept_match.js
+    {
+        "Official Matchmaking in the play menu",
+        { "PlayMenu.Init();" },
+        PatchGroupMatchmaking,
+        PatchAction::InsertBefore,
+        OfficialMatchmakingEntry,
+    },
+    {
+        "matches found by Official Matchmaking against bots",
+        { "LobbyAPI.SetLocalPlayerReady( 'accept' );", "}" },
+        PatchGroupMatchmaking,
+        PatchAction::InsertBefore,
+        AcceptStartsBotMatch,
     },
 };
 
@@ -59,6 +118,11 @@ static size_t FindPatch(const std::string &source, const ScriptPatch &patch)
     for (size_t start = source.find(patch.pieces[0]); start != std::string::npos; start = source.find(patch.pieces[0], start + 1))
     {
         const size_t count = patch.Count();
+        if (count == 1)
+        {
+            return start;
+        }
+
         size_t offset = start + patch.pieces[0].size();
         bool matched = true;
 
@@ -86,19 +150,36 @@ static size_t FindPatch(const std::string &source, const ScriptPatch &patch)
     return std::string::npos;
 }
 
-int Apply(std::string &source)
+int Apply(std::string &source, unsigned groups)
 {
     int applied = 0;
 
     for (const ScriptPatch &patch : Patches)
     {
+        if (!(patch.group & groups))
+        {
+            continue;
+        }
+
         size_t offset = FindPatch(source, patch);
         if (offset == std::string::npos)
         {
             continue;
         }
 
-        source.erase(offset, patch.pieces[patch.Count() - 1].size());
+        if (patch.action == PatchAction::Remove)
+        {
+            source.erase(offset, patch.pieces[patch.Count() - 1].size());
+        }
+        else if (source.find(patch.text) == std::string::npos)
+        {
+            source.insert(offset, patch.text);
+        }
+        else
+        {
+            continue; // already there
+        }
+
         applied++;
 
         // once per patch, scripts can get compiled again for every panel that uses them
@@ -157,6 +238,9 @@ static Compile_t Og_Compile;
 
 } // namespace V8
 
+// which patches the config asks for
+static unsigned s_patchGroups;
+
 static V8::Local *__cdecl Hk_Compile(V8::Local *result, V8::Local source, void *origin)
 {
     std::string text;
@@ -172,7 +256,7 @@ static V8::Local *__cdecl Hk_Compile(V8::Local *result, V8::Local source, void *
         V8::Utf8ValueDestruct(&value);
     }
 
-    if (UIPatches::Apply(text))
+    if (UIPatches::Apply(text, s_patchGroups))
     {
         V8::Local patched{};
         V8::NewFromUtf8(&patched, V8::GetCurrentIsolate(), text.data(), V8::NormalString, static_cast<int>(text.size()));
@@ -276,7 +360,9 @@ static void CALLBACK OnDllNotification(ULONG reason, const LdrDllLoadedNotificat
 
 void UIPatches::Install()
 {
-    if (!GetConfig().m_restoreDisabledUI)
+    s_patchGroups = (GetConfig().m_restoreDisabledUI ? PatchGroupDisabledUI : 0)
+        | (GetConfig().m_rankProgress ? PatchGroupMatchmaking : 0);
+    if (!s_patchGroups)
     {
         return;
     }

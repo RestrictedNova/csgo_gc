@@ -270,9 +270,14 @@ public:
 
 using CreateInterface_t = void *(__cdecl *)(const char *name, int *returnCode);
 
-// ICvar::FindVar and ConVar::GetInt are virtuals 16 and 13
+// ICvar::FindVar is virtual 16, ConVar::GetInt and SetValue(const char *) are 13 and 14
 using FindVar_t = void *(__thiscall *)(void *cvar, const char *name);
 using ConVarGetInt_t = int(__thiscall *)(void *conVar);
+using ConVarSetString_t = void(__thiscall *)(void *conVar, const char *value);
+
+// ConVar::m_pParent, and the string value in its CVValue_t (GetInt reads m_nValue at 0x30)
+constexpr size_t ConVarParentOffset = 0x1c;
+constexpr size_t ConVarStringOffset = 0x24;
 
 class EngineMatchEvent final : public MatchEvent
 {
@@ -449,7 +454,49 @@ void MatchWatcher::Shutdown()
     state.gc = nullptr;
 }
 
+static void *FindConVar(const char *name)
+{
+    WatcherState &state = State();
+    if (!state.cvar && !GetInterfaces(state))
+    {
+        return nullptr;
+    }
+
+    return (*reinterpret_cast<FindVar_t **>(state.cvar))[16](state.cvar, name);
+}
+
+std::string MatchWatcher::GetGameSetting(const char *name)
+{
+    void *conVar = FindConVar(name);
+    if (!conVar)
+    {
+        return {};
+    }
+
+    void *parent = *reinterpret_cast<void **>(static_cast<char *>(conVar) + ConVarParentOffset);
+    const char *value = *reinterpret_cast<const char **>(static_cast<char *>(parent ? parent : conVar) + ConVarStringOffset);
+    return value ? value : "";
+}
+
+void MatchWatcher::SetGameSetting(const char *name, const char *value)
+{
+    void *conVar = FindConVar(name);
+    if (conVar)
+    {
+        (*reinterpret_cast<ConVarSetString_t **>(conVar))[14](conVar, value);
+    }
+}
+
 #else
+
+std::string MatchWatcher::GetGameSetting(const char *)
+{
+    return {};
+}
+
+void MatchWatcher::SetGameSetting(const char *, const char *)
+{
+}
 
 void MatchWatcher::Update(SharedGC &)
 {

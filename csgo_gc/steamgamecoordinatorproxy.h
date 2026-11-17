@@ -23,6 +23,9 @@ public:
 protected:
     void AddMessage(uint32_t type, std::vector<uint8_t> &&buffer);
 
+    // the game is sending the gc a message, on the main thread
+    virtual void BeforeSendMessage(uint32_t /*type*/) {}
+
     CCallbackMgr &m_callbackMgr;
 
 private:

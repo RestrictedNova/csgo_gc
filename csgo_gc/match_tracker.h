@@ -73,4 +73,9 @@ void Update(SharedGC &gc);
 // stop listening, the gc is going away
 void Shutdown();
 
+// console variables, which is where the play menu keeps its settings. main thread only, empty
+// or nothing when the engine isn't there
+std::string GetGameSetting(const char *name);
+void SetGameSetting(const char *name, const char *value);
+
 } // namespace MatchWatcher

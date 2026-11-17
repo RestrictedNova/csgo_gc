@@ -58,6 +58,8 @@ public:
     void RunFrame() override;
 
 private:
+    void BeforeSendMessage(uint32_t type) override;
+
     ClientGC m_gc;
     NetworkingClient m_networking;
 };
@@ -87,6 +89,7 @@ SteamGameCoordinatorProxy::~SteamGameCoordinatorProxy()
 
 PROXY_FUNC(EGCResults, SteamGameCoordinatorProxy::SendMessage, uint32 unMsgType, const void *pubData, uint32 cubData)
 {
+    BeforeSendMessage(unMsgType);
     GetGC().PostToGC(GCEvent::Message, unMsgType, pubData, cubData);
     return k_EGCResultOK;
 }
@@ -153,6 +156,20 @@ SharedGC &SteamGameCoordinatorProxyClient::GetGC()
     return m_gc;
 }
 
+void SteamGameCoordinatorProxyClient::BeforeSendMessage(uint32_t type)
+{
+    // the gc can't see the play menu, so hand it the official mode and maps ticked there (and
+    // the practice bot difficulty, which it borrows for the match) before the search starts
+    if ((type & ~ProtobufMask) == k_EMsgGCCStrike15_v2_MatchmakingStart)
+    {
+        const std::string mode = MatchWatcher::GetGameSetting("ui_playsettings_mode_official");
+        const std::string maps = MatchWatcher::GetGameSetting(("ui_playsettings_maps_official_" + mode).c_str());
+        const std::string botDifficulty = MatchWatcher::GetGameSetting("player_botdifflast_s");
+        const std::string preferences = mode + '\n' + maps + '\n' + botDifficulty;
+        m_gc.PostToGC(GCEvent::MatchmakingPreferences, 0, preferences.data(), static_cast<uint32_t>(preferences.size()));
+    }
+}
+
 void SteamGameCoordinatorProxyClient::RunFrame()
 {
     // matches against bots on a local server, for rank_progress
@@ -185,6 +202,17 @@ void SteamGameCoordinatorProxyClient::RunFrame()
             MicroTxnAuthorizationResponse_t response{};
             response.m_bAuthorized = 1;
             m_callbackMgr.QueueCallback(response);
+            break;
+        }
+
+        case HostEvent::SetGameSetting:
+        {
+            const std::string setting{ event.buffer.begin(), event.buffer.end() };
+            const size_t separator = setting.find('\0');
+            if (separator != std::string::npos)
+            {
+                MatchWatcher::SetGameSetting(setting.substr(0, separator).c_str(), setting.c_str() + separator + 1);
+            }
             break;
         }
 

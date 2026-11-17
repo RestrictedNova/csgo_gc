@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "gc_client.h"
+#include "bot_matchmaking.h"
 #include "config.h"
 #include "gc_message.h"
 #include "graffiti.h"
@@ -70,6 +71,7 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, std::vector<uint8_t> &&buf
 
     case GCEvent::Tick:
         InventoryUpdate();
+        MatchmakingTick();
         break;
 
     case GCEvent::MatchResult:
@@ -79,6 +81,10 @@ void ClientGC::HandleEvent(GCEvent type, uint64_t id, std::vector<uint8_t> &&buf
             memcpy(&result, buffer.data(), sizeof(result));
             OnMatchResult(result);
         }
+        break;
+
+    case GCEvent::MatchmakingPreferences:
+        OnMatchmakingPreferences({ reinterpret_cast<const char *>(buffer.data()), buffer.size() });
         break;
 
     default:
@@ -111,6 +117,14 @@ void ClientGC::HandleMessage(uint32_t type, const void *data, uint32_t size)
 
         case k_EMsgGCCStrike15_v2_MatchmakingClient2GCHello:
             OnMatchmakingHello();
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingStart:
+            MatchmakingStart(messageRead);
+            break;
+
+        case k_EMsgGCCStrike15_v2_MatchmakingStop:
+            MatchmakingStop(messageRead);
             break;
 
         case k_EMsgGCRequestInventoryRefresh:
@@ -565,12 +579,29 @@ void ClientGC::SetLevel(int level, int xp)
     SendPlayerLevel();
 }
 
+// FIXME: false once Official Matchmaking against bots is tested, real CS:GO never counted practice
+constexpr bool PracticeMatchesCount = true;
+
 void ClientGC::OnMatchResult(const MatchResult &result)
 {
     if (!GetConfig().m_rankProgress)
     {
         return;
     }
+
+    const bool official = m_officialMatch.pending && m_officialMatch.mode == result.mode;
+    if (official)
+    {
+        m_officialMatch.pending = false;
+        SetGameSetting("player_botdifflast_s", m_officialMatch.restoreBotDifficulty);
+    }
+    else if (!PracticeMatchesCount)
+    {
+        Platform::Print("Practice match against bots ended, only Official Matchmaking counts\n");
+        return;
+    }
+
+    Platform::Print("{} match ended\n", official ? "Official Matchmaking" : "Practice");
 
     const uint32_t now = static_cast<uint32_t>(time(nullptr));
     const PlayerProgress::MatchUpdate update = m_progress.ApplyMatch(result, now);
@@ -607,6 +638,146 @@ void ClientGC::OnMatchResult(const MatchResult &result)
     Platform::Print("+{} XP ({} earned, {} weekly bonus), level {} -> {} ({}/{} XP)\n",
         update.gainedXp, update.earnedXp, update.gainedXp - update.earnedXp,
         update.oldLevel, update.newLevel, m_xp, Progress::XpPerLevel);
+}
+
+void ClientGC::SetGameSetting(std::string_view name, std::string_view value)
+{
+    std::vector<uint8_t> buffer{ name.begin(), name.end() };
+    buffer.push_back(0);
+    buffer.insert(buffer.end(), value.begin(), value.end());
+    PostToHost(HostEvent::SetGameSetting, 0, std::move(buffer));
+}
+
+void ClientGC::OnMatchmakingPreferences(std::string_view preferences)
+{
+    auto nextLine = [&preferences]
+    {
+        const size_t end = preferences.find('\n');
+        std::string line{ preferences.substr(0, end) };
+        preferences = end == std::string_view::npos ? std::string_view{} : preferences.substr(end + 1);
+        return line;
+    };
+
+    m_matchmakingPreferences.mode = nextLine();
+    m_matchmakingPreferences.maps = nextLine();
+    m_matchmakingPreferences.botDifficulty = nextLine();
+}
+
+void ClientGC::SendMatchmakingStatus(int matchmaking, std::string_view error)
+{
+    // matchmaking 0 ends the search, 1 to 3 is searching and 4 connects to the reserved server
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate update;
+    update.set_matchmaking(matchmaking);
+    if (matchmaking)
+    {
+        update.add_waiting_account_id_sessions(AccountId());
+    }
+
+    if (!error.empty())
+    {
+        update.set_error(std::string{ error });
+    }
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientUpdate, update);
+}
+
+void ClientGC::MatchmakingStart(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingStart message;
+    if (!messageRead.ReadProtobuf(message))
+    {
+        Platform::Print("Parsing CMsgGCCStrike15_v2_MatchmakingStart failed, ignoring\n");
+        return;
+    }
+
+    Platform::Print("Matchmaking start: game type {:#x}, {} player(s), mode \"{}\", maps \"{}\"\n",
+        message.game_type(), message.account_ids_size(), m_matchmakingPreferences.mode, m_matchmakingPreferences.maps);
+
+    const std::optional<RankedMode> mode = BotMatchmaking::ModeFromSetting(m_matchmakingPreferences.mode);
+    if (!GetConfig().m_rankProgress || !mode)
+    {
+        // the client turns this into "#SFUI_QMM_ERROR_FailedToSetupSearchData"
+        Platform::Print("Only competitive and wingman can be played against bots, with rank_progress\n");
+        SendMatchmakingStatus(0, "Failed to setup search data");
+        return;
+    }
+
+    m_search.searching = true;
+    m_search.mode = *mode;
+    m_search.maps = BotMatchmaking::MapsFromSetting(m_matchmakingPreferences.maps, *mode);
+    m_search.gameType = message.game_type();
+    m_search.foundAt = std::chrono::steady_clock::now() + std::chrono::seconds{ Random::Uint32(5, 20) };
+
+    SendMatchmakingStatus(1);
+}
+
+void ClientGC::MatchmakingStop(GCMessageRead &messageRead)
+{
+    CMsgGCCStrike15_v2_MatchmakingStop message;
+    messageRead.ReadProtobuf(message);
+
+    if (m_search.searching)
+    {
+        Platform::Print("Matchmaking stopped\n");
+        m_search.searching = false;
+    }
+
+    SendMatchmakingStatus(0);
+}
+
+void ClientGC::MatchmakingTick()
+{
+    const auto now = std::chrono::steady_clock::now();
+
+    if (m_officialMatch.pending && now > m_officialMatch.expires)
+    {
+        Platform::Print("The match matchmaking found was never played\n");
+        m_officialMatch.pending = false;
+        SetGameSetting("player_botdifflast_s", m_officialMatch.restoreBotDifficulty);
+    }
+
+    if (!m_search.searching || now < m_search.foundAt)
+    {
+        return;
+    }
+
+    m_search.searching = false;
+
+    const int botDifficulty = BotMatchmaking::BotDifficultyFor(m_progress.Skill(m_search.mode).rating);
+    const std::string map = Random::Select(m_search.maps);
+
+    // accepting starts the match the way Practice with bots does, with its bot difficulty, so
+    // lend it the one matchmaking picked and put the player's back when the match is over
+    if (!m_officialMatch.pending)
+    {
+        m_officialMatch.restoreBotDifficulty = m_matchmakingPreferences.botDifficulty;
+    }
+
+    m_officialMatch.pending = true;
+    m_officialMatch.mode = m_search.mode;
+    m_officialMatch.map = map;
+    m_officialMatch.botDifficulty = botDifficulty;
+    m_officialMatch.expires = now + std::chrono::minutes{ 15 };
+    SetGameSetting("player_botdifflast_s", std::to_string(botDifficulty));
+
+    // the match found popup, with nobody else to wait for
+    CMsgGCCStrike15_v2_MatchmakingGC2ClientReserve reserve;
+    reserve.set_serverid(0x0184000000000001ull); // an anonymous game server
+    reserve.set_direct_udp_ip(MakeAddress(127, 0, 0, 1));
+    reserve.set_direct_udp_port(27015);
+    reserve.set_reservationid((static_cast<uint64_t>(Random::Uint32()) << 32) | Random::Uint32(1));
+    reserve.set_map(map);
+    reserve.set_server_address("127.0.0.1:27015");
+
+    CMsgGCCStrike15_v2_MatchmakingGC2ServerReserve *reservation = reserve.mutable_reservation();
+    reservation->add_account_ids(AccountId());
+    reservation->set_game_type(m_search.gameType);
+    reservation->set_match_id(reserve.reservationid());
+
+    SendMessageToGame(false, k_EMsgGCCStrike15_v2_MatchmakingGC2ClientReserve, reserve);
+
+    Platform::Print("Match found: {} on {} against bot difficulty {}\n",
+        m_search.mode == RankedMode::Wingman ? "wingman" : "competitive", map, botDifficulty);
 }
 
 void ClientGC::SendPlayerLevel()

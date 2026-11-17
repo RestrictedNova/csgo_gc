@@ -105,6 +105,46 @@ static void TestLegacyPopup()
     CHECK(source.find("_BetaEnrollmentStatusChange();") != std::string::npos);
 }
 
+// shaped like the ends of mainmenu_play.js and popup_accept_match.js
+static const char PlayMenu[] =
+    "} )();\r\n"
+    "( function()\r\n"
+    "{\r\n"
+    "\tPlayMenu.Init();\r\n"
+    "\t$.RegisterEventHandler( \"ReadyForDisplay\", $.GetContextPanel(), PlayMenu.ReadyForDisplay );\r\n"
+    "} )();\r\n";
+
+static const char AcceptPopup[] =
+    "\tvar _OnAcceptMatchPressed = function ()\r\n"
+    "\t{\r\n"
+    "\t\tm_hasPressedAccept = true;\r\n"
+    "\t\tLobbyAPI.SetLocalPlayerReady( 'accept' );\r\n"
+    "\t}\r\n";
+
+static void TestMatchmakingPatches()
+{
+    // the menu entry goes in before the menu initialises, once
+    std::string playMenu = PlayMenu;
+    CHECK(UIPatches::Apply(playMenu) == 1);
+    CHECK(playMenu.find("'data-type', 'official'") < playMenu.find("PlayMenu.Init();"));
+    std::string again = playMenu;
+    CHECK(UIPatches::Apply(again) == 0 && again == playMenu);
+
+    // accepting starts the match, inside the function after the ready up
+    std::string accept = AcceptPopup;
+    CHECK(UIPatches::Apply(accept) == 1);
+    const size_t ready = accept.find("SetLocalPlayerReady( 'accept' );");
+    const size_t start = accept.find("LobbyAPI.StartMatchmaking");
+    CHECK(ready != std::string::npos && start != std::string::npos && ready < start);
+    CHECK(accept.rfind('}') > start);
+
+    // only with rank_progress
+    std::string disabledOnly = PlayMenu;
+    CHECK(UIPatches::Apply(disabledOnly, UIPatches::PatchGroupDisabledUI) == 0);
+    std::string playerCardOnly = PlayerCard;
+    CHECK(UIPatches::Apply(playerCardOnly, UIPatches::PatchGroupMatchmaking) == 0);
+}
+
 static void TestOtherScripts()
 {
     std::string source = "var x = function()\r\n{\r\n\tel.AddClass( 'hidden' );\r\n\treturn;\r\n\tfoo();\r\n};\r\n";
@@ -115,6 +155,7 @@ static void TestOtherScripts()
 
 int main(int argc, char **argv)
 {
+    // a real script: how many patches apply, and the patched script if there's an output path
     if (argc > 1)
     {
         std::ifstream file{ argv[1], std::ios::binary };
@@ -122,11 +163,18 @@ int main(int argc, char **argv)
         contents << file.rdbuf();
         std::string source = contents.str();
         std::printf("%d patch(es) applied to %s\n", UIPatches::Apply(source), argv[1]);
+
+        if (argc > 2)
+        {
+            std::ofstream{ argv[2], std::ios::binary } << source;
+        }
+
         return 0;
     }
 
     TestPlayerCard();
     TestLegacyPopup();
+    TestMatchmakingPatches();
     TestOtherScripts();
 
     if (s_failures)

@@ -2,6 +2,7 @@
 // bots from its game events. runs in a copy of tests/fixture, it writes csgo_gc/progress.txt there
 
 #include "stdafx.h"
+#include "bot_matchmaking.h"
 #include "match_tracker.h"
 #include "platform.h"
 #include "progress.h"
@@ -402,8 +403,33 @@ static void TestTracker()
     }
 }
 
+static void TestBotMatchmaking()
+{
+    CHECK(BotMatchmaking::ModeFromSetting("competitive") == RankedMode::Competitive);
+    CHECK(BotMatchmaking::ModeFromSetting("scrimcomp2v2") == RankedMode::Wingman);
+    CHECK(!BotMatchmaking::ModeFromSetting("casual"));
+    CHECK(!BotMatchmaking::ModeFromSetting("survival"));
+
+    // the ticked maps, without the lobby map veto
+    std::vector<std::string> maps = BotMatchmaking::MapsFromSetting("mg_de_dust2,mg_lobby_mapveto,mg_de_mirage", RankedMode::Competitive);
+    CHECK((maps == std::vector<std::string>{ "de_dust2", "de_mirage" }));
+
+    // none ticked: the mode's own maps
+    maps = BotMatchmaking::MapsFromSetting("", RankedMode::Competitive);
+    CHECK(maps.size() == 7 && std::ranges::count(maps, "de_mirage") == 1);
+    maps = BotMatchmaking::MapsFromSetting("mg_lobby_mapveto", RankedMode::Wingman);
+    CHECK(std::ranges::count(maps, "de_shortdust") == 1);
+
+    // bots a bit below your skill: a new account gets normal bots, the best get expert
+    CHECK(BotMatchmaking::BotDifficultyFor(1500) == 1);
+    CHECK(BotMatchmaking::BotDifficultyFor(900) == 0);
+    CHECK(BotMatchmaking::BotDifficultyFor(1750) == 2);
+    CHECK(BotMatchmaking::BotDifficultyFor(2300) == 3);
+}
+
 int main()
 {
+    TestBotMatchmaking();
     TestRating();
     TestSkillGroups();
     TestPlacementAndExpiry();

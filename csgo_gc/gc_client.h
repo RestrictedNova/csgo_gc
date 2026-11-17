@@ -89,6 +89,16 @@ private:
     // a match against bots ended (rank_progress)
     void OnMatchResult(const MatchResult &result);
 
+    // Official Matchmaking against bots (rank_progress): Go starts a search, a match is found
+    // after a while, and accepting it in the popup starts a match against bots like Practice
+    // with bots does (a ui patch). Matches set up this way are the ones that count
+    void OnMatchmakingPreferences(std::string_view preferences);
+    void MatchmakingStart(GCMessageRead &messageRead);
+    void MatchmakingStop(GCMessageRead &messageRead);
+    void MatchmakingTick();
+    void SendMatchmakingStatus(int matchmaking, std::string_view error = {});
+    void SetGameSetting(std::string_view name, std::string_view value);
+
     // the level or XP changed (service medal, bonus rank, a match), saves it with rank_progress
     void SetLevel(int level, int xp);
 
@@ -115,6 +125,40 @@ private:
     // medal or using a bonus rank only lasts for the session
     int m_level;
     int m_xp;
+
+    // the play menu's settings sent with the last MatchmakingStart
+    struct MatchmakingPreferences
+    {
+        std::string mode;
+        std::string maps;
+        std::string botDifficulty; // player_botdifflast_s, put back after a match
+    };
+
+    MatchmakingPreferences m_matchmakingPreferences;
+
+    struct BotMatchSearch
+    {
+        bool searching{ false };
+        std::chrono::steady_clock::time_point foundAt;
+        RankedMode mode{ RankedMode::Competitive };
+        std::vector<std::string> maps;
+        uint32_t gameType{ 0 };
+    };
+
+    BotMatchSearch m_search;
+
+    // a match found by matchmaking, counted when it ends
+    struct OfficialMatch
+    {
+        bool pending{ false };
+        RankedMode mode{ RankedMode::Competitive };
+        std::string map;
+        int botDifficulty{ 0 };
+        std::chrono::steady_clock::time_point expires;
+        std::string restoreBotDifficulty;
+    };
+
+    OfficialMatch m_officialMatch;
 
     // commendations given this session by account id, so the commend popup shows them again
     std::unordered_map<uint32_t, PlayerCommendationInfo> m_commendations;

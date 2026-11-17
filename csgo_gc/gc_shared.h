@@ -6,6 +6,7 @@ enum class HostEvent
     NetMessage, // id contains the recipient steam id, buffer contains the payload
     MicroTransactionResponse, // runs MicroTxnAuthorizationResponse_t, no arguments
     CloseChannel, // id contains the steam id
+    SetGameSetting, // buffer contains a console variable's name, a nul and its new value
 };
 
 enum class GCEvent
@@ -19,6 +20,7 @@ enum class GCEvent
     SetAuthTicket, // id contains the ticket handle, buffer contains the ticket
     ClearAuthTicket, // id contains the ticket handle
     MatchResult, // buffer contains a MatchResult, a match against bots ended
+    MatchmakingPreferences, // buffer contains the play menu's official mode, maps and bot difficulty, one per line
 
     // server
     ClientConnected, // id contains the steam id, buffer contains the ticket
